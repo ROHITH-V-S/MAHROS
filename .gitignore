@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+package-lock.json
+
+# Generated experiment output. Rebuild with:
+#   python experiments/run_all.py 5 && python experiments/build_dashboard.py
+results/*.json
+results/*.html
+results/*.png
+!results/.gitkeep

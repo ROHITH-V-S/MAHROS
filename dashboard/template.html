@@ -1,0 +1,1249 @@
+<title>MAHROS Control Board</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Tokens. Light palette is defined completely on bare :root; dark redefines
+   only the tokens, twice, so both the OS setting and an explicit toggle win.
+   Categorical series colours are validated for CVD separation in both modes.
+   --------------------------------------------------------------------------- */
+:root {
+  --ground:      #F2F4F6;
+  --surface:     #FFFFFF;
+  --surface-2:   #FAFBFC;
+  --ink:         #0F1720;
+  --ink-2:       #33424F;
+  --muted:       #5A6B7B;
+  --faint:       #8A9AA8;
+  --line:        #DCE2E8;
+  --line-soft:   #E9EDF1;
+
+  /* categorical - identity, fixed order, never cycled */
+  --s1: #02959F;   /* MAHROS */
+  --s2: #C4455F;   /* Phone tree */
+  --s3: #5560D8;   /* Centralized */
+  --s-neutral: #97A6B4;
+
+  /* status - reserved, never reused as a series colour */
+  --good: #1B7F4E;
+  --warn: #A96A0F;
+  --crit: #B93A3A;
+  --good-bg: #E6F2EC;
+  --warn-bg: #FBF1E2;
+  --crit-bg: #F9EAEA;
+
+  --shadow: 0 1px 2px rgba(15,23,32,.06), 0 4px 12px rgba(15,23,32,.04);
+  --radius: 10px;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", system-ui, Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:    #0B1117;
+    --surface:   #131C24;
+    --surface-2: #17222B;
+    --ink:       #E3EAF1;
+    --ink-2:     #BECBD7;
+    --muted:     #8296A8;
+    --faint:     #64788A;
+    --line:      #243543;
+    --line-soft: #1C2A35;
+
+    --s1: #1E9EA8;
+    --s2: #D25B71;
+    --s3: #7580E2;
+    --s-neutral: #5C7085;
+
+    --good: #3DA16E;
+    --warn: #C99039;
+    --crit: #D96060;
+    --good-bg: #13291F;
+    --warn-bg: #2A2113;
+    --crit-bg: #2B1717;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 4px 14px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:    #0B1117;
+  --surface:   #131C24;
+  --surface-2: #17222B;
+  --ink:       #E3EAF1;
+  --ink-2:     #BECBD7;
+  --muted:     #8296A8;
+  --faint:     #64788A;
+  --line:      #243543;
+  --line-soft: #1C2A35;
+
+  --s1: #1E9EA8;
+  --s2: #D25B71;
+  --s3: #7580E2;
+  --s-neutral: #5C7085;
+
+  --good: #3DA16E;
+  --warn: #C99039;
+  --crit: #D96060;
+  --good-bg: #13291F;
+  --warn-bg: #2A2113;
+  --crit-bg: #2B1717;
+
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 4px 14px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 96px; }
+
+/* --- type ---------------------------------------------------------------- */
+h1, h2, h3 { text-wrap: balance; margin: 0; letter-spacing: -0.02em; font-weight: 700; }
+h1 { font-size: clamp(28px, 4vw, 42px); line-height: 1.1; }
+h2 { font-size: clamp(20px, 2.4vw, 25px); line-height: 1.2; }
+h3 { font-size: 16px; letter-spacing: -0.01em; }
+p { margin: 0; max-width: 68ch; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 600;
+}
+.lede { color: var(--muted); font-size: 16px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.small { font-size: 13px; color: var(--muted); }
+.tiny  { font-size: 12px; color: var(--faint); }
+
+/* --- masthead ------------------------------------------------------------ */
+.mast {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky; top: 0; z-index: 40;
+}
+.mast-in {
+  max-width: 1180px; margin: 0 auto; padding: 12px 24px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.mark {
+  font-family: var(--mono); font-weight: 700; font-size: 15px;
+  letter-spacing: .06em; color: var(--ink);
+  display: flex; align-items: center; gap: 9px;
+}
+.mark .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--s1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--s1) 22%, transparent);
+}
+.mark .sub { color: var(--faint); font-weight: 500; letter-spacing: .02em; }
+.mast-spacer { flex: 1 1 auto; }
+
+.pill {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .04em;
+  padding: 3px 9px; border-radius: 100px;
+  border: 1px solid var(--line); color: var(--muted);
+  white-space: nowrap;
+}
+.pill.ok   { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); background: var(--good-bg); }
+.pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: var(--warn-bg); }
+
+.theme-btn {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 100px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+}
+.theme-btn:hover { color: var(--ink); border-color: var(--faint); }
+.theme-btn:focus-visible, .seg button:focus-visible, .link:focus-visible {
+  outline: 2px solid var(--s1); outline-offset: 2px;
+}
+
+/* --- hero ---------------------------------------------------------------- */
+.hero { padding: 44px 0 32px; display: grid; gap: 18px; }
+.hero .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* --- stat tiles ---------------------------------------------------------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 14px; }
+.tile {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px 18px 16px;
+  box-shadow: var(--shadow); display: grid; gap: 6px;
+  position: relative; overflow: hidden;
+}
+.tile::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--accent-col, var(--s1));
+}
+.tile .k { font-size: 12px; font-family: var(--mono); color: var(--muted); letter-spacing: .04em; }
+.tile .v {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.tile .v .unit { font-size: 16px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.tile .d { font-size: 12.5px; color: var(--muted); }
+.tile .d b { font-family: var(--mono); font-weight: 700; }
+.up   { color: var(--good); }
+.down { color: var(--crit); }
+
+/* --- sections ------------------------------------------------------------ */
+section { margin-top: 52px; scroll-margin-top: 70px; }
+.sec-head { display: grid; gap: 7px; margin-bottom: 20px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.card-pad { padding: 20px; }
+
+/* --- filter row ---------------------------------------------------------- */
+.filters {
+  display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end;
+  padding: 14px 18px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-2); margin-bottom: 18px;
+}
+.filter-group { display: grid; gap: 6px; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--surface); flex-wrap: wrap; }
+.seg button {
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  padding: 6px 11px; border: 0; background: transparent; color: var(--muted);
+  cursor: pointer; border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--surface-2); color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--s1); color: #fff; }
+
+/* --- charts -------------------------------------------------------------- */
+.chart-wrap { overflow-x: auto; }
+svg.chart { display: block; width: 100%; height: auto; }
+svg.chart text { font-family: var(--mono); font-variant-numeric: tabular-nums; fill: var(--muted); }
+svg.chart .lbl   { font-size: 12px; fill: var(--ink-2); font-weight: 600; }
+svg.chart .val   { font-size: 12px; fill: var(--ink); font-weight: 700; }
+svg.chart .axis  { font-size: 10.5px; fill: var(--faint); }
+svg.chart .grid  { stroke: var(--line-soft); stroke-width: 1; }
+svg.chart .whisk { stroke: var(--ink); stroke-width: 1.5; opacity: .42; }
+svg.chart .barhit { fill: transparent; cursor: pointer; }
+svg.chart .barhit:hover + .barmark, svg.chart .barmark.hot { opacity: .78; }
+
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 4px 0 12px; }
+.legend .item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); font-family: var(--mono); }
+.legend .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+#tip {
+  position: fixed; pointer-events: none; z-index: 90; opacity: 0;
+  transition: opacity .1s; background: var(--ink); color: var(--ground);
+  border-radius: 7px; padding: 8px 10px; font-size: 12px; font-family: var(--mono);
+  line-height: 1.5; box-shadow: 0 6px 20px rgba(0,0,0,.28); max-width: 260px;
+}
+#tip b { color: var(--surface); }
+
+/* --- tables -------------------------------------------------------------- */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--faint); font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+tbody td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: var(--surface-2); }
+tr.hl td { background: color-mix(in srgb, var(--s1) 7%, transparent); font-weight: 600; }
+tr.hl td:first-child { box-shadow: inset 3px 0 0 var(--s1); }
+
+/* --- decision feed ------------------------------------------------------- */
+.feed { display: grid; gap: 12px; }
+.dec {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 15px 17px; display: grid; gap: 9px;
+  box-shadow: var(--shadow);
+}
+.dec-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.route { font-family: var(--mono); font-weight: 700; font-size: 13.5px; color: var(--ink); }
+.route .arrow { color: var(--s1); margin: 0 5px; }
+.chip {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+}
+.chip.a5 { color: var(--crit); background: var(--crit-bg); border-color: color-mix(in srgb, var(--crit) 35%, var(--line)); }
+.chip.a4 { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+.chip.a3, .chip.a2 { color: var(--good); background: var(--good-bg); border-color: color-mix(in srgb, var(--good) 30%, var(--line)); }
+.dec .why { font-size: 13.5px; color: var(--ink-2); max-width: 78ch; }
+.dec .meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint); display: flex; gap: 14px; flex-wrap: wrap; }
+
+/* --- ledger / privacy demo ---------------------------------------------- */
+.demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.code {
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+  border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+  color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+}
+.code .redact { color: var(--s1); font-weight: 700; }
+.code .strike { color: var(--crit); }
+.stage { display: grid; gap: 8px; }
+.stage-label { display: flex; align-items: center; gap: 8px; }
+.stage-n {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  width: 19px; height: 19px; border-radius: 5px; flex: none;
+  display: grid; place-items: center;
+  background: var(--s1); color: #fff;
+}
+.verdict {
+  display: flex; align-items: center; gap: 9px; padding: 11px 14px;
+  border-radius: 8px; font-size: 13.5px; font-family: var(--mono); font-weight: 600;
+}
+.verdict.ok  { background: var(--good-bg); color: var(--good); }
+.verdict.bad { background: var(--crit-bg); color: var(--crit); }
+
+/* --- architecture -------------------------------------------------------- */
+.layers { display: grid; gap: 9px; }
+.layer {
+  display: grid; grid-template-columns: 40px 1fr; gap: 15px; align-items: start;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 15px 17px; box-shadow: var(--shadow);
+}
+.layer .n {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--s1) 12%, transparent);
+  color: var(--s1); border: 1px solid color-mix(in srgb, var(--s1) 30%, transparent);
+}
+.layer .body { display: grid; gap: 5px; }
+.layer .body .t { font-weight: 700; font-size: 14.5px; }
+.layer .body .d { font-size: 13.5px; color: var(--muted); max-width: 74ch; }
+.layer .body .impl { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+
+/* --- notes / limits ------------------------------------------------------ */
+.notes { display: grid; gap: 11px; }
+.note {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start;
+  padding: 13px 16px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--surface); font-size: 13.5px; color: var(--ink-2);
+}
+.note .tag {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+  padding: 3px 8px; border-radius: 5px; white-space: nowrap;
+}
+.note.limit .tag { background: var(--warn-bg); color: var(--warn); }
+.note.strength .tag { background: var(--good-bg); color: var(--good); }
+
+footer {
+  margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line);
+  color: var(--faint); font-size: 12.5px; display: flex; gap: 16px;
+  justify-content: space-between; flex-wrap: wrap;
+}
+footer .num { color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+@media (max-width: 640px) {
+  .wrap { padding: 0 16px 64px; }
+  .tile .v { font-size: 28px; }
+}
+</style>
+
+<div class="mast">
+  <div class="mast-in">
+    <div class="mark"><span class="dot"></span>MAHROS <span class="sub">/ control board</span></div>
+    <div class="mast-spacer"></div>
+    <span class="pill ok" id="pill-tests">27 tests passing</span>
+    <span class="pill">TRL 3&ndash;4</span>
+    <span class="pill" id="pill-seeds"></span>
+    <button class="theme-btn" id="theme-toggle" type="button">theme</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ================= HERO ================= -->
+  <div class="hero">
+    <div class="eyebrow">Multi-Agent Hospital Resource Optimization System</div>
+    <h1>Hospitals negotiating escalation transfers directly &mdash; and the evidence that it works.</h1>
+    <p class="lede">
+      When an admitted, stabilised patient deteriorates and needs care their hospital
+      cannot give, someone has to find a bed elsewhere. Today that is a person making
+      phone calls. MAHROS replaces the calls with a decentralised negotiation between
+      hospitals, tracks who is carrying the load, and writes every agreement to a
+      tamper-evident ledger. Every number below comes from a simulation you can re-run.
+    </p>
+    <div class="badges">
+      <span class="pill ok">Runs end to end</span>
+      <span class="pill">Discrete-event simulation</span>
+      <span class="pill">5 seeds &times; 4 scenarios &times; 5 strategies</span>
+      <span class="pill">Zero paid services</span>
+    </div>
+  </div>
+
+  <div class="tiles" id="hero-tiles"></div>
+  <p class="tiny" style="margin-top:10px" id="hero-note"></p>
+
+  <!-- ================= COMPARISON ================= -->
+  <section id="comparison">
+    <div class="sec-head">
+      <div class="eyebrow">01 &nbsp;/&nbsp; Head to head</div>
+      <h2>How MAHROS compares to the alternatives</h2>
+      <p class="small">
+        Five allocation strategies run on identical patient streams, so any difference
+        is the allocation logic alone. Whiskers are 95% confidence intervals across
+        <span class="num" id="seed-count"></span> seeds.
+      </p>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <span class="eyebrow">Scenario</span>
+        <div class="seg" id="seg-scenario"></div>
+      </div>
+      <div class="filter-group">
+        <span class="eyebrow">Metric</span>
+        <div class="seg" id="seg-metric"></div>
+      </div>
+    </div>
+
+    <div class="card card-pad">
+      <div id="metric-desc" class="small" style="margin-bottom:14px"></div>
+      <div class="chart-wrap"><svg class="chart" id="chart-compare"></svg></div>
+    </div>
+
+    <div class="table-wrap card card-pad" style="margin-top:14px">
+      <table id="table-compare">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+      <p class="tiny" style="margin-top:12px">
+        &ldquo;No transfers&rdquo; shows a low mean wait only because it completes the easy
+        cases and abandons the rest &mdash; read it together with its success rate, never alone.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= THE CONTRIBUTION ================= -->
+  <section id="contribution">
+    <div class="sec-head">
+      <div class="eyebrow">02 &nbsp;/&nbsp; The claim that matters</div>
+      <h2>Matching a system that sees everything, while seeing almost nothing</h2>
+      <p class="small">
+        The centralized baseline is not a straw man: it reads every hospital's private
+        capacity directly and optimises globally. It is the efficiency ceiling. MAHROS
+        reaches that ceiling without any hospital surrendering its data.
+      </p>
+    </div>
+    <div class="demo-grid" id="contribution-cards"></div>
+  </section>
+
+  <!-- ================= FAIRNESS ================= -->
+  <section id="fairness">
+    <div class="sec-head">
+      <div class="eyebrow">03 &nbsp;/&nbsp; Who carries the load</div>
+      <h2>Fairness is measured, not assumed</h2>
+      <p class="small">
+        A transfer network that always dumps on the same hospital will not survive
+        contact with real hospital politics. Burden is compared against each hospital's
+        share of the network's critical-care capacity &mdash; a tertiary centre taking
+        more is fair; a small hospital taking more is not.
+      </p>
+    </div>
+    <div class="card card-pad">
+      <div class="legend" id="legend-burden"></div>
+      <div class="chart-wrap"><svg class="chart" id="chart-burden"></svg></div>
+      <p class="tiny" style="margin-top:12px" id="burden-note"></p>
+    </div>
+  </section>
+
+  <!-- ================= ACUITY ================= -->
+  <section id="acuity">
+    <div class="sec-head">
+      <div class="eyebrow">04 &nbsp;/&nbsp; Who it works for</div>
+      <h2>The sickest patients are the hardest to place</h2>
+      <p class="small">
+        Higher acuity means a shorter safe window between deterioration and definitive
+        care. Success rate falls as that window tightens &mdash; for every strategy.
+        This is where the remaining headroom is.
+      </p>
+    </div>
+    <div class="card card-pad">
+      <div class="legend" id="legend-acuity"></div>
+      <div class="chart-wrap"><svg class="chart" id="chart-acuity"></svg></div>
+    </div>
+  </section>
+
+  <!-- ================= DECISIONS ================= -->
+  <section id="decisions">
+    <div class="sec-head">
+      <div class="eyebrow">05 &nbsp;/&nbsp; Explainability</div>
+      <h2>Every agreement carries the reason it was made</h2>
+      <p class="small">
+        Real negotiated decisions from a single run, with the rationale that was written
+        to the ledger alongside them. A bed manager should be able to read why a patient
+        went where they went, months later, without access to the model.
+      </p>
+    </div>
+    <div class="feed" id="decision-feed"></div>
+  </section>
+
+  <!-- ================= TRUST ================= -->
+  <section id="trust">
+    <div class="sec-head">
+      <div class="eyebrow">06 &nbsp;/&nbsp; Trust layer</div>
+      <h2>Tamper-evident by construction, private by default</h2>
+    </div>
+    <div class="demo-grid">
+      <div class="card card-pad" id="ledger-demo"></div>
+      <div class="card card-pad" id="privacy-demo"></div>
+    </div>
+  </section>
+
+  <!-- ================= ARCHITECTURE ================= -->
+  <section id="architecture">
+    <div class="sec-head">
+      <div class="eyebrow">07 &nbsp;/&nbsp; How it is built</div>
+      <h2>Five layers, each independently testable</h2>
+    </div>
+    <div class="layers" id="layer-list"></div>
+  </section>
+
+  <!-- ================= HONEST NOTES ================= -->
+  <section id="limits">
+    <div class="sec-head">
+      <div class="eyebrow">08 &nbsp;/&nbsp; Read this before citing anything above</div>
+      <h2>What holds up, and what does not yet</h2>
+    </div>
+    <div class="notes" id="notes-list"></div>
+  </section>
+
+  <footer>
+    <span>MAHROS v0.1.0 &mdash; capstone research prototype</span>
+    <span class="num" id="footer-meta"></span>
+  </footer>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+const DATA = __MAHROS_DATA__;
+
+/* ---------------------------------------------------------------- helpers */
+const $  = (s) => document.querySelector(s);
+const el = (t, cls, html) => {
+  const n = document.createElement(t);
+  if (cls) n.className = cls;
+  if (html !== undefined) n.innerHTML = html;
+  return n;
+};
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SVGNS = "http://www.w3.org/2000/svg";
+const mk = (t, attrs = {}) => {
+  const n = document.createElementNS(SVGNS, t);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+};
+
+const esc = (s) => String(s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const pct  = (v) => (v * 100).toFixed(1) + "%";
+const pct0 = (v) => (v * 100).toFixed(0) + "%";
+const min1 = (v) => v.toFixed(1);
+const num3 = (v) => v.toFixed(3);
+
+/* series colour is bound to the strategy, never to its rank in a sorted list */
+const SERIES = {
+  mahros:  { key: "--s1", label: "MAHROS" },
+  phone:   { key: "--s2", label: "Phone tree (today)" },
+  central: { key: "--s3", label: "Centralized (omniscient)" },
+  nearest: { key: "--s-neutral", label: "Nearest available" },
+  none:    { key: "--s-neutral", label: "No transfers" },
+};
+const colourOf = (s) => css(SERIES[s] ? SERIES[s].key : "--s-neutral");
+
+const SCENARIO_LABELS = {
+  baseline: "Baseline",
+  surge: "Demand surge",
+  scarcity: "Capacity scarcity",
+  surge_scarcity: "Surge + scarcity",
+};
+const SCENARIO_BLURB = {
+  baseline: "A network running at roughly 70% occupancy with no external shock.",
+  surge: "An epidemic/festival-style demand spike on an otherwise intact network.",
+  scarcity: "India-style critical-care scarcity: same demand, materially fewer beds.",
+  surge_scarcity: "The stress case: a scarce network hit by a demand spike.",
+};
+
+const METRICS = {
+  success_rate: {
+    label: "Success rate", fmt: pct, lowerBetter: false, domain: [0, 1],
+    desc: "Share of escalation transfers that reached definitive care inside the clinical safe window. Higher is better.",
+  },
+  mean_wait: {
+    label: "Mean time to care", fmt: (v) => min1(v) + " min", lowerBetter: true,
+    desc: "Minutes from deterioration to care starting at the receiving hospital. Lower is better. Read alongside success rate — a strategy that abandons hard cases looks fast.",
+  },
+  p90_wait: {
+    label: "P90 time to care", fmt: (v) => min1(v) + " min", lowerBetter: true,
+    desc: "The slow tail, where patients are actually harmed. Lower is better.",
+  },
+  breach_rate: {
+    label: "Safe-window breach", fmt: pct, lowerBetter: true, domain: [0, 1],
+    desc: "Share of transfers that missed the clinical window entirely. Lower is better.",
+  },
+  critical_breach_rate: {
+    label: "Critical breach", fmt: pct, lowerBetter: true, domain: [0, 1],
+    desc: "Breach rate restricted to acuity 4–5 — the patients with the least time to spare. Lower is better.",
+  },
+  burden_gini: {
+    label: "Burden Gini", fmt: num3, lowerBetter: true, domain: [0, 0.6],
+    desc: "Inequality of transfer load across hospitals, relative to each one's share of critical-care capacity. 0 means perfectly shared. Lower is better.",
+  },
+  coordinator_minutes_per_transfer: {
+    label: "Staff minutes per transfer", fmt: (v) => min1(v) + " min", lowerBetter: true,
+    desc: "Human coordinator time consumed brokering one transfer. This is the resource that runs out first during a surge. Lower is better.",
+  },
+  mean_icu_utilisation: {
+    label: "ICU utilisation", fmt: pct, lowerBetter: false, domain: [0, 1],
+    desc: "Share of ICU capacity actually in use. Higher means less capacity wasted, provided success rate holds.",
+  },
+};
+
+/* ---------------------------------------------------------------- tooltip */
+const tip = $("#tip");
+function showTip(e, html) {
+  tip.innerHTML = html;
+  tip.style.opacity = "1";
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.opacity = "0"; };
+
+/* ---------------------------------------------------------------- state */
+let scenario = "surge_scarcity";
+let metric = "success_rate";
+
+/* ================================================== hero tiles */
+function renderHero() {
+  const ss = DATA.results.surge_scarcity;
+  const m = ss.mahros, p = ss.phone, c = ss.central;
+  const tiles = [
+    {
+      k: "Transfers placed in time", v: pct0(m.success_rate), unit: "",
+      col: "--s1",
+      d: `vs <b>${pct0(p.success_rate)}</b> for a phone tree &mdash; <span class="up">+${((m.success_rate / p.success_rate - 1) * 100).toFixed(0)}% relative</span>`,
+    },
+    {
+      k: "Mean time to definitive care", v: min1(m.mean_wait), unit: "min",
+      col: "--s1",
+      d: `vs <b>${min1(p.mean_wait)} min</b> by phone &mdash; <span class="up">${((m.mean_wait / p.mean_wait - 1) * 100).toFixed(0)}%</span>`,
+    },
+    {
+      k: "Coordinator time per transfer", v: min1(m.coordinator_minutes_per_transfer), unit: "min",
+      col: "--s1",
+      d: `vs <b>${min1(p.coordinator_minutes_per_transfer)} min</b> of staff time on the phone &mdash; <span class="up">${((m.coordinator_minutes_per_transfer / p.coordinator_minutes_per_transfer - 1) * 100).toFixed(0)}%</span>`,
+    },
+    {
+      k: "Private state seen by any one node", v: pct0(m.disclosure_concentration), unit: "",
+      col: "--s3",
+      d: `a central optimiser sees <b>${pct0(c.disclosure_concentration)}</b> of it, and brokers <b>${pct0(c.decision_concentration)}</b> of all decisions`,
+    },
+  ];
+  const host = $("#hero-tiles");
+  tiles.forEach((t) => {
+    const n = el("div", "tile");
+    n.style.setProperty("--accent-col", `var(${t.col})`);
+    n.append(
+      el("div", "k", t.k),
+      el("div", "v", `${t.v}${t.unit ? ` <span class="unit">${t.unit}</span>` : ""}`),
+      el("div", "d", t.d)
+    );
+    host.append(n);
+  });
+  $("#hero-note").innerHTML =
+    `Headline figures from the <b>surge&nbsp;+&nbsp;scarcity</b> scenario &mdash; a capacity-constrained network under a demand spike &mdash; averaged over ${DATA.meta.n_seeds} seeds ` +
+    `(${DATA.results.surge_scarcity.mahros.n_requests_total} transfer requests in total). Every other scenario is in the table below.`;
+  $("#seed-count").textContent = DATA.meta.n_seeds;
+  $("#pill-seeds").textContent = DATA.meta.n_seeds + " seeds/arm";
+  $("#footer-meta").textContent =
+    `generated ${DATA.meta.generated_at} · seeds ${DATA.meta.seeds.join(", ")}`;
+}
+
+/* ================================================== filters */
+function renderFilters() {
+  const sc = $("#seg-scenario");
+  DATA.meta.scenarios.forEach((s) => {
+    const b = el("button", null, SCENARIO_LABELS[s] || s);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(s === scenario));
+    b.onclick = () => {
+      scenario = s;
+      [...sc.children].forEach((c) => c.setAttribute("aria-pressed", String(c === b)));
+      drawCompare(); drawTable(); renderContribution();
+    };
+    sc.append(b);
+  });
+
+  const mg = $("#seg-metric");
+  Object.keys(METRICS).forEach((k) => {
+    const b = el("button", null, METRICS[k].label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(k === metric));
+    b.onclick = () => {
+      metric = k;
+      [...mg.children].forEach((c) => c.setAttribute("aria-pressed", String(c === b)));
+      drawCompare();
+    };
+    mg.append(b);
+  });
+}
+
+/* ================================================== comparison chart */
+function drawCompare() {
+  const svg = $("#chart-compare");
+  svg.innerHTML = "";
+  const spec = METRICS[metric];
+  $("#metric-desc").innerHTML = `<b>${spec.label}.</b> ${spec.desc}`;
+
+  const rows = DATA.meta.strategies.map((s) => ({
+    s,
+    label: SERIES[s].label,
+    v: DATA.results[scenario][s][metric],
+    ci: DATA.results[scenario][s][metric + "_ci95"] || 0,
+  }));
+
+  const padL = 176, padR = 74, padT = 10, padB = 30;
+  const rowH = 42, gap = 12;
+  const W = 900;
+  const H = padT + rows.length * rowH + padB;
+  const plotW = W - padL - padR;
+
+  const maxData = Math.max(...rows.map((r) => r.v + r.ci));
+  const max = spec.domain ? spec.domain[1] : maxData * 1.12;
+  const x = (v) => padL + (v / max) * plotW;
+
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${spec.label} by strategy, ${SCENARIO_LABELS[scenario]}`);
+
+  /* recessive grid */
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const v = (max / ticks) * i;
+    svg.append(mk("line", {
+      class: "grid", x1: x(v), x2: x(v), y1: padT, y2: padT + rows.length * rowH,
+    }));
+    const t = mk("text", { class: "axis", x: x(v), y: H - 10, "text-anchor": "middle" });
+    t.textContent = spec.fmt(v).replace(" min", "");
+    svg.append(t);
+  }
+
+  rows.forEach((r, i) => {
+    const yTop = padT + i * rowH;
+    const barH = rowH - gap;
+    const yc = yTop + barH / 2;
+    const col = colourOf(r.s);
+    const w = Math.max(2, x(r.v) - padL);
+
+    const lbl = mk("text", { class: "lbl", x: padL - 14, y: yc + 4, "text-anchor": "end" });
+    lbl.textContent = r.label;
+    svg.append(lbl);
+
+    /* 4px rounded data-end, anchored flat to the baseline */
+    const bar = mk("path", {
+      class: "barmark",
+      d: roundedRightBar(padL, yTop, w, barH, 4),
+      fill: col,
+    });
+    svg.append(bar);
+
+    if (r.ci > 0) {
+      const x1 = x(Math.max(0, r.v - r.ci)), x2 = x(r.v + r.ci);
+      svg.append(mk("line", { class: "whisk", x1, x2, y1: yc, y2: yc }));
+      svg.append(mk("line", { class: "whisk", x1, x2: x1, y1: yc - 5, y2: yc + 5 }));
+      svg.append(mk("line", { class: "whisk", x1: x2, x2, y1: yc - 5, y2: yc + 5 }));
+    }
+
+    const val = mk("text", { class: "val", x: x(r.v + r.ci) + 10, y: yc + 4 });
+    val.textContent = spec.fmt(r.v);
+    svg.append(val);
+
+    /* hit target larger than the mark */
+    const hit = mk("rect", { class: "barhit", x: padL, y: yTop - 2, width: plotW, height: barH + 4 });
+    hit.addEventListener("mousemove", (e) => {
+      bar.classList.add("hot");
+      showTip(e,
+        `<b>${r.label}</b><br>${spec.label}: <b>${spec.fmt(r.v)}</b>` +
+        (r.ci ? `<br>95% CI ±${spec.fmt(r.ci).replace(" min", "")}` : "") +
+        `<br>${SCENARIO_LABELS[scenario]}`);
+    });
+    hit.addEventListener("mouseleave", () => { bar.classList.remove("hot"); hideTip(); });
+    svg.append(hit);
+  });
+}
+
+/* flat left edge on the baseline, rounded data-end */
+function roundedRightBar(x, y, w, h, r) {
+  r = Math.min(r, w, h / 2);
+  return `M${x},${y} H${x + w - r} A${r},${r} 0 0 1 ${x + w},${y + r} V${y + h - r} A${r},${r} 0 0 1 ${x + w - r},${y + h} H${x} Z`;
+}
+
+/* ================================================== comparison table */
+function drawTable() {
+  const cols = [
+    ["success_rate", "Success", pct],
+    ["mean_wait", "Mean wait", (v) => min1(v)],
+    ["p90_wait", "P90 wait", (v) => min1(v)],
+    ["breach_rate", "Breach", pct],
+    ["critical_breach_rate", "Crit. breach", pct],
+    ["burden_gini", "Gini", num3],
+    ["coordinator_minutes_per_transfer", "Staff min", min1],
+    ["messages_per_transfer", "Msgs", min1],
+  ];
+  const thead = $("#table-compare thead");
+  const tbody = $("#table-compare tbody");
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+
+  const hr = el("tr");
+  hr.append(el("th", null, "Strategy"));
+  cols.forEach(([, l]) => hr.append(el("th", null, l)));
+  hr.append(el("th", null, "Decentralised"));
+  thead.append(hr);
+
+  DATA.meta.strategies.forEach((s) => {
+    const d = DATA.results[scenario][s];
+    const tr = el("tr", s === "mahros" ? "hl" : null);
+    const nameCell = el("td", null,
+      `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${colourOf(s)};margin-right:8px"></span>${SERIES[s].label}`);
+    tr.append(nameCell);
+    cols.forEach(([k, , f]) => tr.append(el("td", "num", f(d[k]))));
+    tr.append(el("td", "num",
+      d.decentralised
+        ? `<span style="color:var(--good)">yes</span>`
+        : `<span style="color:var(--crit)">no</span> <span class="tiny">(${pct0(d.decision_concentration)} brokered by one node)</span>`));
+    tbody.append(tr);
+  });
+}
+
+/* ================================================== contribution cards */
+function renderContribution() {
+  const host = $("#contribution-cards");
+  host.innerHTML = "";
+  const d = DATA.deltas[scenario].vs_central;
+  const m = DATA.results[scenario].mahros;
+  const c = DATA.results[scenario].central;
+
+  const items = [
+    {
+      t: "Clinical performance",
+      rows: [
+        ["Success rate", pct(c.success_rate), pct(m.success_rate), m.success_rate >= c.success_rate],
+        ["Mean time to care", min1(c.mean_wait) + " min", min1(m.mean_wait) + " min", m.mean_wait <= c.mean_wait],
+        ["P90 time to care", min1(c.p90_wait) + " min", min1(m.p90_wait) + " min", m.p90_wait <= c.p90_wait],
+      ],
+      foot: "MAHROS holds the efficiency ceiling without central data.",
+    },
+    {
+      t: "Fairness",
+      rows: [
+        ["Burden Gini", num3(c.burden_gini), num3(m.burden_gini), m.burden_gini <= c.burden_gini],
+        ["Burden Jain", num3(c.burden_jain), num3(m.burden_jain), m.burden_jain >= c.burden_jain],
+        ["Wait equity gap", min1(c.wait_equity_gap) + " min", min1(m.wait_equity_gap) + " min", m.wait_equity_gap <= c.wait_equity_gap],
+      ],
+      foot: "Spreading load also prevents congesting the single best hospital.",
+    },
+    {
+      t: "Data exposure",
+      rows: [
+        ["Decisions brokered by one node", pct0(c.decision_concentration), pct0(m.decision_concentration), true],
+        ["Private state seen by one node", pct0(c.disclosure_concentration), pct0(m.disclosure_concentration), true],
+        ["Identifiers crossing a boundary", "0", "0", true],
+      ],
+      foot: "This column is the whole argument: same outcomes, no central authority.",
+    },
+  ];
+
+  items.forEach((it) => {
+    const card = el("div", "card card-pad");
+    card.append(el("h3", null, it.t));
+    const tb = el("table");
+    tb.style.marginTop = "12px";
+    const th = el("tr");
+    th.append(el("th", null, ""), el("th", null, "Centralized"), el("th", null, "MAHROS"));
+    const head = el("thead"); head.append(th); tb.append(head);
+    const body = el("tbody");
+    it.rows.forEach(([k, cv, mv, better]) => {
+      const tr = el("tr");
+      tr.append(el("td", null, k));
+      tr.append(el("td", "num", cv));
+      const md = el("td", "num", mv);
+      md.style.color = better ? "var(--good)" : "var(--warn)";
+      md.style.fontWeight = "700";
+      tr.append(md);
+      body.append(tr);
+    });
+    tb.append(body);
+    card.append(tb);
+    card.append(el("p", "tiny", it.foot));
+    card.querySelector(".tiny").style.marginTop = "12px";
+    host.append(card);
+  });
+}
+
+/* ================================================== burden chart */
+function drawBurden() {
+  const svg = $("#chart-burden");
+  svg.innerHTML = "";
+  const on = DATA.hospitals;
+  const off = DATA.hospitals_no_fairness;
+  const byId = Object.fromEntries(off.map((h) => [h.id, h]));
+
+  const rows = on.map((h) => ({
+    id: h.id, tier: h.tier, cap: h.critical_capacity,
+    on: h.accepted, off: (byId[h.id] || { accepted: 0 }).accepted,
+  }));
+
+  const W = 900, padL = 54, padR = 16, padT = 12, padB = 46;
+  const groupW = (W - padL - padR) / rows.length;
+  const barW = Math.min(15, groupW / 2 - 3);
+  const H = 280;
+  const plotH = H - padT - padB;
+  const max = Math.max(...rows.flatMap((r) => [r.on, r.off])) * 1.12;
+  const y = (v) => padT + plotH - (v / max) * plotH;
+
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Transfers accepted per hospital, with and without the fairness layer");
+
+  for (let i = 0; i <= 4; i++) {
+    const v = (max / 4) * i;
+    svg.append(mk("line", { class: "grid", x1: padL, x2: W - padR, y1: y(v), y2: y(v) }));
+    const t = mk("text", { class: "axis", x: padL - 9, y: y(v) + 4, "text-anchor": "end" });
+    t.textContent = Math.round(v);
+    svg.append(t);
+  }
+
+  const colOn = css("--s1"), colOff = css("--s-neutral");
+
+  rows.forEach((r, i) => {
+    const gx = padL + i * groupW + groupW / 2;
+    /* 2px surface gap between adjacent fills */
+    const xOff = gx - barW - 1, xOn = gx + 1;
+
+    [["off", xOff, colOff, r.off], ["on", xOn, colOn, r.on]].forEach(([kind, bx, col, v]) => {
+      const h = Math.max(1, plotH - (y(v) - padT));
+      const bar = mk("path", {
+        class: "barmark",
+        d: roundedTopBar(bx, y(v), barW, h, 3),
+        fill: col,
+      });
+      svg.append(bar);
+      const hit = mk("rect", { class: "barhit", x: bx - 2, y: padT, width: barW + 4, height: plotH });
+      hit.addEventListener("mousemove", (e) => {
+        bar.classList.add("hot");
+        showTip(e,
+          `<b>${r.id}</b> &middot; tier ${r.tier}<br>` +
+          `critical capacity: <b>${r.cap}</b> units<br>` +
+          `with fairness layer: <b>${r.on}</b> accepted<br>` +
+          `without: <b>${r.off}</b> accepted`);
+      });
+      hit.addEventListener("mouseleave", () => { bar.classList.remove("hot"); hideTip(); });
+      svg.append(hit);
+    });
+
+    const t = mk("text", { class: "axis", x: gx, y: H - 26, "text-anchor": "middle" });
+    t.textContent = r.id;
+    svg.append(t);
+    const t2 = mk("text", { class: "axis", x: gx, y: H - 12, "text-anchor": "middle" });
+    t2.setAttribute("opacity", ".62");
+    t2.textContent = "T" + r.tier;
+    svg.append(t2);
+  });
+
+  $("#legend-burden").innerHTML =
+    `<span class="item"><span class="sw" style="background:${colOn}"></span>Fairness layer on</span>` +
+    `<span class="item"><span class="sw" style="background:${colOff}"></span>Fairness layer off</span>`;
+
+  const g = DATA.ablation;
+  $("#burden-note").innerHTML =
+    `Across ${DATA.meta.n_seeds} seeds on surge&nbsp;+&nbsp;scarcity, the fairness layer lowers the burden Gini from ` +
+    `<b>${num3(g.no_fairness.burden_gini)}</b> to <b>${num3(g.full.burden_gini)}</b> ` +
+    `(&minus;${(((g.no_fairness.burden_gini - g.full.burden_gini) / g.no_fairness.burden_gini) * 100).toFixed(1)}%) ` +
+    `while mean time to care moves only from <b>${min1(g.no_fairness.mean_wait)}</b> to <b>${min1(g.full.mean_wait)}</b> minutes. ` +
+    `That trade &mdash; a measurable equity gain for well under a minute of average delay &mdash; is the fairness layer's whole case. ` +
+    `Tiers: T1 primary, T2 district, T3 tertiary referral centre.`;
+}
+
+function roundedTopBar(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h} V${y + r} A${r},${r} 0 0 1 ${x + r},${y} H${x + w - r} A${r},${r} 0 0 1 ${x + w},${y + r} V${y + h} Z`;
+}
+
+/* ================================================== acuity chart */
+function drawAcuity() {
+  const svg = $("#chart-acuity");
+  svg.innerHTML = "";
+  const strats = ["mahros", "phone", "central"];
+  const levels = ["2", "3", "4", "5"];
+  const NAMES = { 2: "Urgent", 3: "Emergent", 4: "Critical", 5: "Life-threatening" };
+
+  const W = 900, padL = 54, padR = 16, padT = 12, padB = 58;
+  const H = 300, plotH = H - padT - padB;
+  const groupW = (W - padL - padR) / levels.length;
+  const barW = Math.min(38, groupW / 4);
+  const y = (v) => padT + plotH - v * plotH;
+
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Transfer success rate by patient acuity for three strategies");
+
+  for (let i = 0; i <= 4; i++) {
+    const v = i / 4;
+    svg.append(mk("line", { class: "grid", x1: padL, x2: W - padR, y1: y(v), y2: y(v) }));
+    const t = mk("text", { class: "axis", x: padL - 9, y: y(v) + 4, "text-anchor": "end" });
+    t.textContent = pct0(v);
+    svg.append(t);
+  }
+
+  levels.forEach((lvl, li) => {
+    const gx = padL + li * groupW + groupW / 2;
+    const total = strats.length * barW + (strats.length - 1) * 2;
+    strats.forEach((s, si) => {
+      const row = (DATA.by_acuity[s] || {})[lvl];
+      if (!row) return;
+      const bx = gx - total / 2 + si * (barW + 2);
+      const v = row.success;
+      const h = Math.max(1, plotH - (y(v) - padT));
+      const col = colourOf(s);
+      const bar = mk("path", { class: "barmark", d: roundedTopBar(bx, y(v), barW, h, 4), fill: col });
+      svg.append(bar);
+
+      /* direct label - selective, only the top of each bar */
+      const t = mk("text", { class: "axis", x: bx + barW / 2, y: y(v) - 7, "text-anchor": "middle" });
+      t.setAttribute("font-weight", "700");
+      t.setAttribute("fill", "var(--ink-2)");
+      t.textContent = pct0(v);
+      svg.append(t);
+
+      const hit = mk("rect", { class: "barhit", x: bx - 1, y: padT, width: barW + 2, height: plotH });
+      hit.addEventListener("mousemove", (e) => {
+        bar.classList.add("hot");
+        showTip(e,
+          `<b>${SERIES[s].label}</b><br>${NAMES[lvl]} (acuity ${lvl})<br>` +
+          `success: <b>${pct(v)}</b> of ${row.n} transfers<br>` +
+          `safe window: <b>${row.window} min</b><br>mean wait: <b>${row.mean_wait} min</b>`);
+      });
+      hit.addEventListener("mouseleave", () => { bar.classList.remove("hot"); hideTip(); });
+      svg.append(hit);
+    });
+
+    const row = DATA.by_acuity.mahros[lvl];
+    const t = mk("text", { class: "lbl", x: gx, y: H - 34, "text-anchor": "middle" });
+    t.textContent = NAMES[lvl];
+    svg.append(t);
+    const t2 = mk("text", { class: "axis", x: gx, y: H - 18, "text-anchor": "middle" });
+    t2.textContent = row ? `${row.window} min window` : "";
+    svg.append(t2);
+  });
+
+  $("#legend-acuity").innerHTML = strats.map((s) =>
+    `<span class="item"><span class="sw" style="background:${colourOf(s)}"></span>${SERIES[s].label}</span>`).join("");
+}
+
+/* ================================================== decision feed */
+function renderDecisions() {
+  const host = $("#decision-feed");
+  DATA.sample_decisions.slice(0, 6).forEach((d) => {
+    const n = el("div", "dec");
+    const top = el("div", "dec-top");
+    top.append(el("div", "route", `${d.origin}<span class="arrow">&rarr;</span>${d.receiver}`));
+    top.append(el("span", `chip a${d.acuity}`, `${d.acuity_name.replace("_", " ").toLowerCase()} &middot; acuity ${d.acuity}`));
+    top.append(el("span", "chip", d.resource.replace(/_/g, " ")));
+    top.append(el("span", "chip", d.specialty));
+    n.append(top);
+    n.append(el("div", "why", d.rationale));
+    const meta = el("div", "meta");
+    meta.append(el("span", null, `${d.peers_contacted} peers asked`));
+    meta.append(el("span", null, `${d.bids_received} feasible bids`));
+    meta.append(el("span", null, `care started in ${d.wait_min} min of a ${d.window_min} min window`));
+    meta.append(el("span", null, `ledger ${d.terms_hash.slice(0, 12)}…`));
+    n.append(meta);
+    host.append(n);
+  });
+}
+
+/* ================================================== ledger + privacy */
+function renderTrust() {
+  const L = DATA.ledger_demo;
+  const host = $("#ledger-demo");
+  host.append(el("h3", null, "The audit ledger catches a forged record"));
+  host.append(el("p", "small", "Every agreement is hashed and Merkle-linked into an append-only chain. Here is that chain being attacked, and the verification that catches it."));
+
+  const stages = el("div", "layers");
+  stages.style.gap = "10px";
+  stages.style.marginTop = "14px";
+
+  const s1 = el("div", "stage");
+  s1.append(el("div", "stage-label", `<span class="stage-n">1</span><span class="small"><b>${L.before.records}</b> agreements sealed into <b>${L.before.blocks}</b> blocks</span>`));
+  s1.append(el("div", "verdict ok", `chain verifies &mdash; valid: ${L.before.valid}`));
+  stages.append(s1);
+
+  const s2 = el("div", "stage");
+  s2.append(el("div", "stage-label", `<span class="stage-n">2</span><span class="small">A hospital quietly rewrites one entry to under-report what it accepted</span>`));
+  s2.append(el("div", "code",
+    `block ${L.tamper.block} &rarr; entry[0].${L.tamper.field}\n` +
+    `<span class="strike">"${L.tamper.was}"</span>  &rarr;  <span class="strike">"${L.tamper.now}"</span>`));
+  stages.append(s2);
+
+  const s3 = el("div", "stage");
+  s3.append(el("div", "stage-label", `<span class="stage-n">3</span><span class="small">Re-verification, run independently by any member hospital</span>`));
+  s3.append(el("div", "verdict bad", `tamper detected &mdash; ${L.after.errors[0]}`));
+  stages.append(s3);
+  host.append(stages);
+  host.append(el("p", "tiny", "This is why the fairness counts cannot be gamed: burden is derived from the ledger, not from what each hospital reports about itself."));
+  host.querySelector("p.tiny").style.marginTop = "12px";
+
+  /* privacy */
+  const P = DATA.privacy_demo;
+  const ph = $("#privacy-demo");
+  ph.append(el("h3", null, "What actually crosses a hospital boundary"));
+  ph.append(el("p", "small", "Clinical notes stay inside the origin hospital. Peers receive a pseudonymous token and the clinical facts needed to bid — nothing else."));
+
+  const pst = el("div", "layers");
+  pst.style.gap = "10px";
+  pst.style.marginTop = "14px";
+
+  const p1 = el("div", "stage");
+  p1.append(el("div", "stage-label", `<span class="stage-n">1</span><span class="small">Internal record (synthetic)</span>`));
+  p1.append(el("div", "code", P.raw_note));
+  pst.append(p1);
+
+  const p2 = el("div", "stage");
+  p2.append(el("div", "stage-label", `<span class="stage-n">2</span><span class="small">After the privacy layer</span>`));
+  /* Escape first, then wrap the placeholders. Doing it the other way round
+     re-escapes the markup we just inserted. */
+  const scrubbed = el("div", "code",
+    esc(P.scrubbed_note).replace(/&lt;([A-Z_]+)&gt;/g,
+      '<span class="redact">&lt;$1&gt;</span>'));
+  scrubbed.id = "privacy-scrubbed";
+  p2.append(scrubbed);
+  pst.append(p2);
+
+  const p3 = el("div", "stage");
+  p3.append(el("div", "stage-label", `<span class="stage-n">3</span><span class="small">What a bidding hospital receives</span>`));
+  p3.append(el("div", "code", esc(JSON.stringify(P.example_public_view, null, 1))));
+  pst.append(p3);
+  ph.append(pst);
+}
+
+/* ================================================== architecture */
+function renderLayers() {
+  const layers = [
+    ["1", "Intra-hospital resource agents",
+      "One agent per resource type inside each hospital — ICU beds, HDU, wards, operating rooms, ventilators, cath labs. Each answers two private questions: can I physically take this patient, and what would it cost me to give the unit up?",
+      "mahros/hospital/agents.py · 6 agent classes"],
+    ["2", "Decentralised negotiation",
+      "Contract Net Protocol. The origin hospital announces an anonymised need, peers bid or refuse in parallel, and the origin awards. No node holds the network's joint state — measured, not asserted.",
+      "mahros/negotiation/cnp.py · announce → bid → award → confirm"],
+    ["3", "LLM coordinator",
+      "Invoked only when the deterministic scorer cannot separate the top candidates. It explains the decision in plain English; it does not make it. Arbitration is an ablation switch, kept off by default so results stay reproducible.",
+      "mahros/llm/coordinator.py · ollama / groq / gemini / template"],
+    ["4", "Fairness accounting",
+      "Tracks burden against each hospital's share of critical-care capacity, and equity of wait times across patient groups. Reorders clinically comparable options; can never make an unsafe one win.",
+      "mahros/fairness/metrics.py · Gini, Jain, equity gap"],
+    ["5", "Tamper-evident audit ledger",
+      "Merkle-linked append-only chain by default; a Solidity contract for a permissioned consortium chain when multi-party consensus is needed. Agreements carry their rationale, so the trail explains as well as records.",
+      "mahros/ledger/ · HashChainLedger + MahrosLedger.sol"],
+  ];
+  const host = $("#layer-list");
+  layers.forEach(([n, t, d, impl]) => {
+    const row = el("div", "layer");
+    row.append(el("div", "n", n));
+    const b = el("div", "body");
+    b.append(el("div", "t", t), el("div", "d", d), el("div", "impl", impl));
+    row.append(b);
+    host.append(row);
+  });
+}
+
+/* ================================================== honest notes */
+function renderNotes() {
+  const ss = DATA.results.surge_scarcity;
+  const notes = [
+    ["strength", "Calibrated",
+      `The simulation produces transfer requests at roughly 3–4% of all admissions, which lands on the ~3.5% of US hospital admissions that are interhospital transfers. That ratio was not tuned to match — it fell out of the escalation model, and it is the main external check available.`],
+    ["strength", "Reproducible",
+      `Every figure is the mean of ${DATA.meta.n_seeds} seeds with 95% confidence intervals. The LLM is deliberately outside the decision path by default, so no headline number depends on a model generation.`],
+    ["limit", "Simulated, not deployed",
+      `TRL 3–4. No real hospital data, no clinical validation, no prospective study. Patient arrivals, lengths of stay, travel times and safe windows are documented modelling assumptions, not measurements.`],
+    ["limit", "Communication cost is real",
+      `MAHROS exchanges ${min1(ss.mahros.messages_per_transfer)} messages per transfer against ${min1(ss.phone.messages_per_transfer)} for a phone tree. The saving is in human coordinator time, not in bytes.`],
+    ["limit", "Safe-window values drive the results",
+      `Success rates are sensitive to the assumed clinical windows. Change them and every arm moves — the ranking is more robust than the absolute numbers.`],
+    ["limit", "Hospitals are modelled as honest",
+      `Bidders report their true capacity. A hospital that strategically under-reports to avoid transfers is not yet modelled; the ledger deters denial after the fact, not misreporting before it.`],
+  ];
+  const host = $("#notes-list");
+  notes.forEach(([kind, tag, body]) => {
+    const n = el("div", `note ${kind}`);
+    n.append(el("span", "tag", tag));
+    n.append(el("div", null, body));
+    host.append(n);
+  });
+}
+
+/* ================================================== theme toggle */
+/* matchMedia is guarded: the page must still render its charts in any
+   environment that lacks it, rather than throwing before the toggle is wired. */
+const mq = (typeof matchMedia === "function")
+  ? matchMedia("(prefers-color-scheme: dark)") : null;
+
+function isDark() {
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit) return explicit === "dark";
+  return mq ? mq.matches : false;
+}
+
+function initTheme() {
+  const btn = $("#theme-toggle");
+  const sync = () => { btn.textContent = isDark() ? "light" : "dark"; };
+  btn.onclick = () => {
+    document.documentElement.setAttribute("data-theme", isDark() ? "light" : "dark");
+    sync();
+    redraw();
+  };
+  if (mq && mq.addEventListener) {
+    mq.addEventListener("change", () => { sync(); redraw(); });
+  }
+  sync();
+}
+
+function redraw() { drawCompare(); drawBurden(); drawAcuity(); drawTable(); }
+
+/* ================================================== boot */
+renderHero();
+renderFilters();
+drawCompare();
+drawTable();
+renderContribution();
+drawBurden();
+drawAcuity();
+renderDecisions();
+renderTrust();
+renderLayers();
+renderNotes();
+initTheme();
+addEventListener("resize", () => { hideTip(); });
+</script>

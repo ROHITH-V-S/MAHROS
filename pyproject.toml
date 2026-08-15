@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mahros"
+version = "0.1.0"
+description = "Multi-Agent Hospital Resource Optimization System: decentralised inter-hospital transfer negotiation with fairness accounting and a tamper-evident audit ledger"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Deliberately minimal. The core simulation runs on the standard library alone;
+# these three are for the CLI and the plotting scripts. Everything else is optional.
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+# Charts and results tables for the paper.
+analysis = ["numpy>=1.24", "pandas>=2.0", "matplotlib>=3.7"]
+# Microsoft Presidio for the privacy layer (falls back to the built-in tokenizer).
+privacy = ["presidio-analyzer>=2.2", "presidio-anonymizer>=2.2"]
+# On-chain audit against a local Hardhat/Anvil node (falls back to the hash chain).
+chain = ["web3>=6.0"]
+# Established negotiation library, used by the optional NegMAS adapter.
+negotiation = ["negmas>=0.10"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+mahros = "mahros.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["mahros*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
