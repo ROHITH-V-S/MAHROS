@@ -71,12 +71,35 @@ class FairnessBody(BaseModel):
 # page
 # --------------------------------------------------------------------------- #
 
+DASHBOARD = Path(__file__).resolve().parents[2] / "results" / "dashboard.html"
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     page = STATIC / "console.html"
     if not page.exists():
         return "<h1>console.html is missing from mahros/server/static/</h1>"
     return page.read_text(encoding="utf-8")
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    """The batch-results dashboard, shown in the Results tab.
+
+    Built separately so the results shown are always a completed sweep rather
+    than whatever the live network happens to have done since startup -- those
+    are different claims and should not be conflated.
+    """
+    if not DASHBOARD.exists():
+        return (
+            "<body style='font-family:system-ui;padding:40px;line-height:1.6'>"
+            "<h2>No results built yet</h2>"
+            "<p>Generate them with:</p>"
+            "<pre style='background:#f4f6f8;padding:12px;border-radius:8px'>"
+            "python experiments/run_all.py 5\n"
+            "python experiments/build_dashboard.py</pre></body>"
+        )
+    return DASHBOARD.read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #

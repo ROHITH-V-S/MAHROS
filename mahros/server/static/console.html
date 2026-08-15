@@ -86,6 +86,16 @@ input[type=range]{width:100%;accent-color:var(--s1)}
 .btn.primary:disabled{opacity:.5;cursor:not-allowed;filter:none}
 .btn.ghost{background:transparent}
 .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn.run[data-on=true]{background:var(--crit);border-color:var(--crit);color:#fff}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:3px;background:var(--surface-3);padding:3px;border-radius:8px;border:1px solid var(--line)}
+.tabs button{font-family:var(--mono);font-size:12px;font-weight:700;padding:5px 13px;border-radius:6px;
+  border:0;background:transparent;color:var(--muted);cursor:pointer}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-pressed=true]{background:var(--s1);color:#fff}
+#view-results{padding:0}
+#dash{width:100%;height:calc(100vh - 53px);border:0;display:block;background:var(--ground)}
 .acuity-row{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .acuity-row button{font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 0;border-radius:6px;
   border:1px solid var(--line);background:var(--surface-2);color:var(--muted);cursor:pointer}
@@ -197,7 +207,11 @@ table.rank tr.win td:first-child{box-shadow:inset 3px 0 0 var(--good)}
 <body>
 
 <div class="mast"><div class="mast-in">
-  <div class="mark"><span class="dot" id="conn"></span>MAHROS <span class="sub">/ live console</span></div>
+  <div class="mark"><span class="dot" id="conn"></span>MAHROS</div>
+  <nav class="tabs" id="tabs">
+    <button type="button" data-view="live" aria-pressed="true">Live sim</button>
+    <button type="button" data-view="results" aria-pressed="false">Results</button>
+  </nav>
   <span class="pill mono" id="clock">—</span>
   <span class="pill mono" id="scen">—</span>
   <div class="spacer"></div>
@@ -207,7 +221,11 @@ table.rank tr.win td:first-child{box-shadow:inset 3px 0 0 var(--good)}
   <button class="btn ghost" style="width:auto" id="theme">theme</button>
 </div></div>
 
-<div class="grid">
+<div id="view-results" hidden>
+  <iframe id="dash" title="MAHROS batch results" src="about:blank"></iframe>
+</div>
+
+<div id="view-live"><div class="grid">
 
   <!-- ============ LEFT ============ -->
   <div class="col">
@@ -251,6 +269,9 @@ table.rank tr.win td:first-child{box-shadow:inset 3px 0 0 var(--good)}
           <button class="btn" id="auto1">Random case</button>
           <button class="btn" id="auto10">Run 10 fast</button>
         </div>
+        <button class="btn run" id="autorun" style="margin-top:8px">▶ Run continuously</button>
+        <div class="tiny" style="margin-top:7px">Generates synthetic escalations and negotiates them
+          back to back, so you can watch the network fill up and the burden even out.</div>
       </div>
     </div>
 
@@ -322,7 +343,7 @@ table.rank tr.win td:first-child{box-shadow:inset 3px 0 0 var(--good)}
       <div class="card-b"><div id="log"></div></div>
     </div>
   </div>
-</div>
+</div></div>
 
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -334,7 +355,7 @@ const nice=s=>String(s).replace(/_/g," ");
 const WINDOWS={2:480,3:240,4:150,5:90};
 const ACNAME={2:"Urgent",3:"Emergent",4:"Critical",5:"Life-threatening"};
 
-let STATE=null, ACUITY=4, BUSY=false, ws=null, lastBlocks=0;
+let STATE=null, ACUITY=4, BUSY=false, ws=null, lastBlocks=0, AUTORUN=false;
 
 /* ---------------- websocket ---------------- */
 function connect(){
@@ -349,7 +370,7 @@ const send=o=>{ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); };
 
 function handle(m){
   switch(m.type){
-    case "state": STATE=m.state; renderState(); break;
+    case "state": STATE=m.state; renderState(); pumpAutorun(); break;
     case "negotiation_start": startNeg(m); break;
     case "step": step(m); break;
     case "agreement": award(m); setBusy(false); break;
@@ -687,6 +708,27 @@ $("#auto1").onclick=()=>{ if(BUSY)return; setBusy(true);
   send({action:"auto",count:1,pace_ms:+$("#f-pace").value}); };
 $("#auto10").onclick=()=>{ if(BUSY)return; setBusy(true);
   send({action:"auto",count:10,pace_ms:90}); };
+
+/* Continuous synthetic run. Each case is fired only after the previous one
+   has fully resolved (the server's closing `state` message), so the queue
+   cannot run ahead of the animation. */
+function pumpAutorun(){
+  if(!AUTORUN) return;
+  setTimeout(()=>{
+    if(!AUTORUN) return;
+    setBusy(true);
+    send({action:"auto",count:1,pace_ms:+$("#f-pace").value});
+  }, 400);
+}
+function setAutorun(on){
+  AUTORUN=on;
+  const b=$("#autorun");
+  b.dataset.on=String(on);
+  b.textContent=on?"■ Stop":"▶ Run continuously";
+  if(on){ log("continuous run started","ok"); if(!BUSY) pumpAutorun(); }
+  else log("continuous run stopped");
+}
+$("#autorun").onclick=()=>setAutorun(!AUTORUN);
 $("#f-fair").onchange=e=>{ send({action:"fairness",enabled:e.target.checked});
   log("fairness layer "+(e.target.checked?"on":"off")); };
 $("#tamper").onclick=()=>send({action:"tamper"});
@@ -706,6 +748,22 @@ $("#theme").onclick=()=>{
   if(STATE) renderState();
 };
 $("#theme").textContent=isDark()?"light":"dark";
+
+/* ---------------- tabs ---------------- */
+let dashLoaded=false;
+function showView(v){
+  $$("#tabs button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.view===v)));
+  $("#view-live").hidden = v!=="live";
+  $("#view-results").hidden = v!=="results";
+  if(v==="results" && !dashLoaded){
+    // Loaded lazily: the results page carries its own embedded dataset and
+    // there is no reason to pay for it unless the tab is actually opened.
+    $("#dash").src="/dashboard";
+    dashLoaded=true;
+  }
+  if(v==="live" && STATE) drawMap();   // the map needs a laid-out container
+}
+$$("#tabs button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
 
 acuityNote();
 connect();

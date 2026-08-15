@@ -193,6 +193,23 @@ def test_index_and_state_endpoints(client):
     assert body["ledger"]["valid"]
 
 
+def test_console_has_both_tabs(client):
+    html = client.get("/").text
+    assert 'data-view="live"' in html
+    assert 'data-view="results"' in html
+    assert 'id="autorun"' in html
+
+
+def test_dashboard_route_serves_or_explains(client):
+    """The Results tab must never render a blank frame."""
+    r = client.get("/dashboard")
+    assert r.status_code == 200
+    body = r.text
+    # Either the built dashboard, or actionable instructions for building it.
+    assert ("MAHROS" in body) or ("run_all.py" in body)
+    assert len(body) > 200
+
+
 def test_transfer_endpoint(client):
     r = client.post("/api/transfer", json={
         "origin": "H00", "resource": "icu_bed", "specialty": "general", "acuity": 4,
