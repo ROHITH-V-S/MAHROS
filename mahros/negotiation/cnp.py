@@ -74,6 +74,7 @@ class ContractNetNegotiator:
         config: CNPConfig,
         coordinator=None,                # llm.coordinator.LLMCoordinator | None
         ledger=None,                     # ledger.interface.LedgerBackend | None
+        observer: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.hospitals = hospitals
         self.travel_time = travel_time
@@ -84,6 +85,14 @@ class ContractNetNegotiator:
         self.config = config
         self.coordinator = coordinator
         self.ledger = ledger
+        # Optional trace hook. The batch simulation leaves this None (an
+        # observer that did work would distort the timings we are measuring);
+        # the live demo server uses it to stream each protocol step to a UI.
+        self.observer = observer
+
+    def _emit(self, kind: str, payload: dict) -> None:
+        if self.observer is not None:
+            self.observer(kind, payload)
 
     # -- phase 1: eligibility + announce ----------------------------------- #
     def select_peers(self, req: TransferRequest, round_no: int) -> list[str]:
@@ -100,6 +109,18 @@ class ContractNetNegotiator:
 
     def announce(self, req: TransferRequest, peers: list[str], now: float) -> None:
         payload = self.privacy.outbound(req.public_view())
+        self._emit("cfp", {
+            "request_id": req.request_id,
+            "origin": req.origin,
+            "peers": list(peers),
+            "public_view": payload,
+            "resource": req.resource.value,
+            "specialty": req.specialty.value,
+            "acuity": int(req.acuity),
+            "window_min": req.acuity.safe_window_minutes,
+            "deadline": req.expires_at,
+            "now": now,
+        })
         for p in peers:
             self.bus.send(
                 Message(
@@ -123,6 +144,20 @@ class ContractNetNegotiator:
             tt = self.travel_time(req.origin, p)
             bid = hosp.evaluate(public, tt, now)
             bids.append(bid)
+            self._emit("bid", {
+                "request_id": req.request_id,
+                "bidder": p,
+                "feasible": bid.feasible,
+                "reason": bid.refusal_reason,
+                "travel_minutes": round(bid.travel_minutes, 1),
+                "prep_minutes": round(bid.prep_minutes, 1),
+                "time_to_care": round(bid.time_to_care, 1),
+                "capability_match": round(bid.capability_match, 2),
+                "post_accept_strain": round(bid.post_accept_strain, 3),
+                # The bidder's private valuation. Shown in the demo purely to
+                # make the point that it exists and never leaves the bidder.
+                "opportunity_cost": round(bid.opportunity_cost, 3),
+            })
             self.bus.send(
                 Message(
                     performative=Perf.PROPOSE if bid.feasible else Perf.REFUSE,
@@ -147,6 +182,31 @@ class ContractNetNegotiator:
     ) -> NegotiationOutcome:
         scored = score_bids(req, bids, now, self.weights, self.fairness)
         outcome = NegotiationOutcome(request=req, scored=scored, all_bids=bids)
+
+        self._emit("scored", {
+            "request_id": req.request_id,
+            "eliminated": [
+                {"bidder": b.bidder, "reason": b.refusal_reason}
+                for b in bids if not b.feasible
+            ],
+            # A feasible bid can still be dropped by score_bids if it cannot
+            # beat the clinical deadline -- surface that rather than hide it.
+            "missed_deadline": [
+                b.bidder for b in bids
+                if b.feasible and b.bidder not in {s.bid.bidder for s in scored}
+            ],
+            "ranked": [{
+                "bidder": s.bid.bidder,
+                "score": round(s.score, 4),
+                "time_term": round(s.time_term, 3),
+                "capability_term": round(s.capability_term, 3),
+                "strain_term": round(s.strain_term, 3),
+                "fairness_term": round(s.fairness_term, 3),
+                "time_to_care": round(s.bid.time_to_care, 1),
+                "slack_minutes": round(s.slack_minutes, 1),
+                "fairness_credit": round(self.fairness.credit(s.bid.bidder), 3),
+            } for s in scored],
+        })
 
         if not scored:
             return outcome
@@ -183,6 +243,21 @@ class ContractNetNegotiator:
                 # reason it was made, or the audit trail explains nothing.
                 agreement.rationale = outcome.rationale
                 self._notify(req, candidate, scored, now)
+                self._emit("awarded", {
+                    "request_id": req.request_id,
+                    "origin": req.origin,
+                    "winner": candidate.bid.bidder,
+                    "runner_up": scored[1].bid.bidder if len(scored) > 1 else None,
+                    "score": round(candidate.score, 4),
+                    "time_to_care": round(candidate.bid.time_to_care, 1),
+                    "slack_minutes": round(candidate.slack_minutes, 1),
+                    "contested": outcome.contested,
+                    "decided_by": decided_by,
+                    "rationale": outcome.rationale,
+                    "terms_hash": agreement.terms_hash,
+                    "agreement_id": agreement.agreement_id,
+                    "lost_race": candidate is not chosen,
+                })
                 return outcome
 
         return outcome
@@ -291,6 +366,12 @@ class ContractNetNegotiator:
         if outcome.agreement is None:
             req.status = RequestStatus.FAILED
             req.failure_reason = self._diagnose(outcome.all_bids)
+            self._emit("failed", {
+                "request_id": req.request_id,
+                "origin": req.origin,
+                "reason": req.failure_reason,
+                "peers_contacted": req.n_peers_contacted,
+            })
         return outcome
 
     @staticmethod

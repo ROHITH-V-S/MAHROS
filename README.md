@@ -10,8 +10,44 @@ accounting, a tamper-evident audit ledger, and plain-English decision explanatio
 > specific surgeon, a cath lab. Around 3.5% of US hospital admissions (~1.5M/year)
 > are interhospital transfers driven by exactly this.
 
-**Status:** working simulation, 27 tests passing, TRL 3–4 (proof of concept
-validated in a simulated setting; not deployed, no real patient data).
+**Status:** working simulation + live demo console, 48 tests passing, TRL 3–4
+(proof of concept validated in a simulated setting; not deployed, no real
+patient data).
+
+---
+
+## Live demo console
+
+```bash
+pip install -e ".[demo]"
+python -m mahros.server            # http://127.0.0.1:8000
+```
+
+An interactive console that drives the **real** negotiation engine — the same
+`Hospital`, `ContractNetNegotiator`, `FairnessLedger` and `HashChainLedger`
+objects the experiments use. Nothing is pre-recorded or reimplemented in JS.
+
+You can:
+
+- **click a hospital** on the network map to pick the origin, then choose the
+  resource it has run out of, the specialty, and the acuity
+- **watch the protocol run step by step** — the call-for-proposals going out,
+  each peer bidding or refusing *with its reason*, the scoring table with the
+  time / capability / strain / fairness terms broken out, and the award
+- **type a clinical note** and see it scrubbed before it crosses a boundary,
+  next to the pseudonymous payload peers actually receive
+- **fill a hospital to capacity** and re-run the same request to watch the
+  answer change
+- **toggle the fairness layer off** and watch the burden bars skew
+- **forge a ledger entry** and watch verification fail
+
+Pacing is presentation-only: the negotiation runs to completion first, then the
+steps are replayed at your chosen speed. Nothing about the result depends on it.
+
+Demo tips: `Run 10 fast` builds up burden so the fairness bars mean something,
+and a **cath lab / cardiac / acuity 5** request is the best single case to show —
+most hospitals refuse it for `no_specialty_capability`, which makes the point
+that scarce capability, not bed count, is what drives transfers.
 
 ---
 
@@ -22,7 +58,7 @@ pip install -e .
 python -m mahros.cli doctor                              # what's available on this machine
 python -m mahros.cli run --scenario surge_scarcity       # one simulation
 python -m mahros.cli compare --scenario surge_scarcity --seeds 5   # all strategies
-python -m pytest tests -q                                # 27 tests
+python -m pytest tests -q                                # 48 tests
 ```
 
 Runs on the standard library plus `typer` and `rich`. No paid services, no API
@@ -163,12 +199,29 @@ mahros/
   ledger/       hash chain, Solidity contract
   llm/          provider-agnostic client, coordinator
   sim/          scenarios, strategies, runner, metrics
+  server/       live demo: FastAPI + WebSocket + console UI
 experiments/    run_all, build_dashboard, diagnose
-dashboard/      template + headless render check
-tests/          27 tests
+dashboard/      template + headless render checks
+tests/          48 tests
 results/        generated output (git-ignored)
 docs/           model assumptions
 ```
+
+The negotiator takes an optional `observer` callback. The batch simulation
+leaves it `None` — an observer doing work would distort the timings being
+measured — and the demo server uses it to stream each protocol step.
+
+### Checks
+
+```bash
+python -m pytest tests -q          # 48 tests
+node dashboard/check.js            # dashboard renders correctly (needs: npm i jsdom)
+node dashboard/check_console.js    # console structure + client/server contract
+```
+
+`check_console.js` verifies that every step kind the engine emits is handled by
+the UI and every action the UI sends is handled by the server — the two drift
+apart silently otherwise.
 
 `experiments/diagnose.py` is the tool to reach for whenever a success rate looks
 wrong — it breaks failures down by resource, acuity, and refusal reason. A

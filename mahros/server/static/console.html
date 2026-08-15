@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAHROS Live Console</title>
+<style>
+:root {
+  --ground:#F2F4F6; --surface:#FFFFFF; --surface-2:#FAFBFC; --surface-3:#F4F6F8;
+  --ink:#0F1720; --ink-2:#33424F; --muted:#5A6B7B; --faint:#8A9AA8;
+  --line:#DCE2E8; --line-soft:#E9EDF1;
+  --s1:#02959F; --s2:#C4455F; --s3:#5560D8; --s-neutral:#97A6B4;
+  --good:#1B7F4E; --warn:#A96A0F; --crit:#B93A3A;
+  --good-bg:#E6F2EC; --warn-bg:#FBF1E2; --crit-bg:#F9EAEA;
+  --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 12px rgba(15,23,32,.04);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI",system-ui,Roboto,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#0B1117; --surface:#131C24; --surface-2:#17222B; --surface-3:#1B2833;
+    --ink:#E3EAF1; --ink-2:#BECBD7; --muted:#8296A8; --faint:#64788A;
+    --line:#243543; --line-soft:#1C2A35;
+    --s1:#1E9EA8; --s2:#D25B71; --s3:#7580E2; --s-neutral:#5C7085;
+    --good:#3DA16E; --warn:#C99039; --crit:#D96060;
+    --good-bg:#13291F; --warn-bg:#2A2113; --crit-bg:#2B1717;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 4px 14px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#0B1117; --surface:#131C24; --surface-2:#17222B; --surface-3:#1B2833;
+  --ink:#E3EAF1; --ink-2:#BECBD7; --muted:#8296A8; --faint:#64788A;
+  --line:#243543; --line-soft:#1C2A35;
+  --s1:#1E9EA8; --s2:#D25B71; --s3:#7580E2; --s-neutral:#5C7085;
+  --good:#3DA16E; --warn:#C99039; --crit:#D96060;
+  --good-bg:#13291F; --warn-bg:#2A2113; --crit-bg:#2B1717;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 4px 14px rgba(0,0,0,.25);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;letter-spacing:-.02em;font-weight:700;text-wrap:balance}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.small{font-size:12.5px;color:var(--muted)}
+.tiny{font-size:11.5px;color:var(--faint)}
+
+/* ---------- masthead ---------- */
+.mast{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
+.mast-in{display:flex;align-items:center;gap:14px;padding:10px 18px;flex-wrap:wrap}
+.mark{font-family:var(--mono);font-weight:700;font-size:14px;letter-spacing:.05em;display:flex;align-items:center;gap:9px}
+.mark .sub{color:var(--faint);font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--s-neutral);flex:none}
+.dot.live{background:var(--good);box-shadow:0 0 0 3px color-mix(in srgb,var(--good) 22%,transparent);animation:pulse 2.2s infinite}
+.dot.dead{background:var(--crit)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.spacer{flex:1 1 auto}
+.pill{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--good);background:var(--good-bg);border-color:color-mix(in srgb,var(--good) 40%,var(--line))}
+.pill.bad{color:var(--crit);background:var(--crit-bg);border-color:color-mix(in srgb,var(--crit) 40%,var(--line))}
+
+/* ---------- layout ---------- */
+.grid{display:grid;grid-template-columns:340px minmax(0,1fr) 300px;gap:14px;padding:14px 18px 40px;align-items:start}
+@media(max-width:1200px){.grid{grid-template-columns:320px minmax(0,1fr)}.col-right{grid-column:1/-1}}
+@media(max-width:880px){.grid{grid-template-columns:1fr}}
+.col{display:grid;gap:14px;position:sticky;top:60px}
+@media(max-width:880px){.col{position:static}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+.card-h{padding:11px 14px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:9px}
+.card-b{padding:14px}
+.card-b.tight{padding:10px}
+
+/* ---------- controls ---------- */
+label.f{display:grid;gap:5px;margin-bottom:11px}
+label.f>span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+select,input[type=text],input[type=number]{
+  font-family:var(--mono);font-size:13px;padding:7px 9px;border:1px solid var(--line);
+  border-radius:7px;background:var(--surface-2);color:var(--ink);width:100%}
+select:focus,input:focus,button:focus-visible{outline:2px solid var(--s1);outline-offset:1px}
+input[type=range]{width:100%;accent-color:var(--s1)}
+.btn{font-family:var(--mono);font-size:12.5px;font-weight:700;padding:9px 12px;border-radius:7px;
+  border:1px solid var(--line);background:var(--surface-2);color:var(--ink);cursor:pointer;width:100%}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--s1);border-color:var(--s1);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed;filter:none}
+.btn.ghost{background:transparent}
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acuity-row{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.acuity-row button{font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 0;border-radius:6px;
+  border:1px solid var(--line);background:var(--surface-2);color:var(--muted);cursor:pointer}
+.acuity-row button[aria-pressed=true]{color:#fff}
+.acuity-row button[data-a="2"][aria-pressed=true]{background:var(--good);border-color:var(--good)}
+.acuity-row button[data-a="3"][aria-pressed=true]{background:var(--good);border-color:var(--good)}
+.acuity-row button[data-a="4"][aria-pressed=true]{background:var(--warn);border-color:var(--warn)}
+.acuity-row button[data-a="5"][aria-pressed=true]{background:var(--crit);border-color:var(--crit)}
+
+/* ---------- map ---------- */
+#map{display:block;width:100%;height:auto}
+#map text{font-family:var(--mono);font-size:7px;fill:var(--muted)}
+#map .hid{font-size:7.5px;font-weight:700;fill:var(--ink)}
+#map .node{cursor:pointer;transition:opacity .15s}
+#map .node:hover .ring{stroke-width:2.4}
+#map .ring{fill:none;stroke:var(--line);stroke-width:1.4}
+#map .node.origin .ring{stroke:var(--s1);stroke-width:2.8}
+#map .node.dim{opacity:.28}
+#map .beam{stroke:var(--s1);stroke-width:1.2;opacity:0;stroke-dasharray:3 3}
+#map .beam.on{animation:beam 1.1s ease-out}
+@keyframes beam{0%{opacity:0}30%{opacity:.85}100%{opacity:0}}
+#map .winbeam{stroke:var(--good);stroke-width:2.4;opacity:0}
+#map .winbeam.on{opacity:.9;animation:win 1.6s ease-out}
+@keyframes win{0%{opacity:0;stroke-width:1}40%{opacity:1;stroke-width:3}100%{opacity:.55;stroke-width:2}}
+.legend-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px}
+.legend-row .i{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.legend-row .sw{width:10px;height:10px;border-radius:3px}
+
+/* ---------- theatre ---------- */
+#theatre{min-height:420px}
+.empty{display:grid;place-items:center;min-height:380px;text-align:center;gap:10px;padding:30px}
+.empty .big{font-size:15px;color:var(--muted);max-width:44ch}
+.neg{display:grid;gap:12px}
+.neg-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding-bottom:11px;border-bottom:1px solid var(--line-soft)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:600;padding:2.5px 8px;border-radius:5px;background:var(--surface-3);border:1px solid var(--line);color:var(--muted)}
+.chip.a5{color:var(--crit);background:var(--crit-bg);border-color:color-mix(in srgb,var(--crit) 35%,var(--line))}
+.chip.a4{color:var(--warn);background:var(--warn-bg);border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+.chip.a3,.chip.a2{color:var(--good);background:var(--good-bg);border-color:color-mix(in srgb,var(--good) 30%,var(--line))}
+.phase{display:grid;gap:8px;animation:rise .22s ease-out}
+@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.phase-h{display:flex;align-items:center;gap:8px}
+.phase-n{font-family:var(--mono);font-size:10.5px;font-weight:700;width:18px;height:18px;border-radius:5px;
+  display:grid;place-items:center;background:var(--s1);color:#fff;flex:none}
+.phase-t{font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+.bids{display:grid;gap:6px}
+.bid{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+  padding:8px 11px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);animation:rise .2s ease-out}
+.bid.yes{border-color:color-mix(in srgb,var(--good) 42%,var(--line));background:var(--good-bg)}
+.bid.no{opacity:.72}
+.bid .who{font-family:var(--mono);font-weight:700;font-size:12.5px}
+.bid .det{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.bid .verdict{font-family:var(--mono);font-size:11px;font-weight:700}
+.bid.yes .verdict{color:var(--good)}
+.bid.no .verdict{color:var(--muted)}
+
+table.rank{width:100%;border-collapse:collapse;font-size:12.5px}
+table.rank th{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;text-align:right;padding:5px 8px;border-bottom:1px solid var(--line)}
+table.rank th:first-child{text-align:left}
+table.rank td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line-soft);font-family:var(--mono);font-variant-numeric:tabular-nums}
+table.rank td:first-child{text-align:left;font-weight:700}
+table.rank tr.win td{background:var(--good-bg)}
+table.rank tr.win td:first-child{box-shadow:inset 3px 0 0 var(--good)}
+
+.award{display:grid;gap:9px;padding:14px;border-radius:9px;background:var(--good-bg);
+  border:1px solid color-mix(in srgb,var(--good) 40%,var(--line));animation:rise .25s ease-out}
+.award .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.award .route{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--ink)}
+.award .route .arrow{color:var(--good);margin:0 6px}
+.award .why{font-size:13px;color:var(--ink-2);max-width:76ch}
+.award .hash{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all}
+.fail{display:grid;gap:7px;padding:14px;border-radius:9px;background:var(--crit-bg);
+  border:1px solid color-mix(in srgb,var(--crit) 40%,var(--line))}
+.fail .t{font-family:var(--mono);font-weight:700;color:var(--crit)}
+
+.privacy-box{display:grid;gap:7px;padding:11px;border-radius:8px;background:var(--surface-3);border:1px solid var(--line-soft)}
+.code{font-family:var(--mono);font-size:11.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--ink-2)}
+.code .redact{color:var(--s1);font-weight:700}
+.code .del{color:var(--crit);text-decoration:line-through;opacity:.75}
+
+/* ---------- right column ---------- */
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{padding:9px 11px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line-soft)}
+.stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1.25;font-variant-numeric:tabular-nums}
+.blocks{display:grid;gap:5px}
+.block{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;padding:7px 10px;
+  border-radius:7px;border:1px solid var(--line);background:var(--surface-2);font-family:var(--mono);font-size:11px}
+.block .ix{font-weight:700;color:var(--s1)}
+.block .hs{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.block .n{color:var(--faint)}
+.block.new{animation:flash .9s ease-out}
+@keyframes flash{0%{background:var(--good-bg);border-color:var(--good)}100%{}}
+.bar-list{display:grid;gap:6px}
+.bar-item{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;font-family:var(--mono);font-size:11px}
+.bar-track{height:7px;border-radius:4px;background:var(--line-soft);overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;background:var(--s1);transition:width .35s ease}
+.toggle{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;cursor:pointer;user-select:none}
+.toggle input{accent-color:var(--s1);width:15px;height:15px}
+#log{max-height:190px;overflow-y:auto;display:grid;gap:3px;font-family:var(--mono);font-size:11px}
+#log .l{display:grid;grid-template-columns:auto 1fr;gap:8px;color:var(--muted)}
+#log .l .t{color:var(--faint)}
+#log .l.ok .m{color:var(--good)}
+#log .l.bad .m{color:var(--crit)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="mast"><div class="mast-in">
+  <div class="mark"><span class="dot" id="conn"></span>MAHROS <span class="sub">/ live console</span></div>
+  <span class="pill mono" id="clock">—</span>
+  <span class="pill mono" id="scen">—</span>
+  <div class="spacer"></div>
+  <span class="pill" id="p-negs">0 negotiations</span>
+  <span class="pill ok" id="p-ledger">ledger ok</span>
+  <span class="pill ok" id="p-priv">0 leaks</span>
+  <button class="btn ghost" style="width:auto" id="theme">theme</button>
+</div></div>
+
+<div class="grid">
+
+  <!-- ============ LEFT ============ -->
+  <div class="col">
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">Network</span><div class="spacer"></div>
+        <span class="tiny mono" id="map-hint">click a hospital to set origin</span></div>
+      <div class="card-b tight">
+        <svg id="map" viewBox="0 0 300 300" role="img" aria-label="Hospital network map with live capacity strain"></svg>
+        <div class="legend-row">
+          <span class="i"><span class="sw" style="background:var(--good)"></span>&lt;70% full</span>
+          <span class="i"><span class="sw" style="background:var(--warn)"></span>70–85%</span>
+          <span class="i"><span class="sw" style="background:var(--crit)"></span>&gt;85%</span>
+        </div>
+        <div class="tiny mono" id="hosp-detail" style="margin-top:9px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">New escalation</span></div>
+      <div class="card-b">
+        <label class="f"><span>Origin hospital</span><select id="f-origin"></select></label>
+        <label class="f"><span>Resource needed</span><select id="f-resource"></select></label>
+        <label class="f"><span>Specialty</span><select id="f-specialty"></select></label>
+        <label class="f"><span>Acuity</span>
+          <div class="acuity-row" id="f-acuity">
+            <button type="button" data-a="2">2</button>
+            <button type="button" data-a="3">3</button>
+            <button type="button" data-a="4" aria-pressed="true">4</button>
+            <button type="button" data-a="5">5</button>
+          </div>
+        </label>
+        <div class="tiny mono" id="acuity-note" style="margin:-6px 0 11px"></div>
+        <label class="f"><span>Patient name (synthetic)</span>
+          <input type="text" id="f-name" placeholder="Priya Nair" value="Priya Nair"></label>
+        <label class="f"><span>Clinical note — watch it get scrubbed</span>
+          <input type="text" id="f-note" value="Mr. Rahul Sharma, MRN H03-000891, ph +91 9812345678, deteriorating."></label>
+        <label class="f"><span>Playback speed <span class="mono" id="pace-v">550 ms</span></span>
+          <input type="range" id="f-pace" min="0" max="1200" step="50" value="550"></label>
+        <button class="btn primary" id="go">Request transfer</button>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn" id="auto1">Random case</button>
+          <button class="btn" id="auto10">Run 10 fast</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">Controls</span></div>
+      <div class="card-b">
+        <label class="toggle" style="margin-bottom:10px">
+          <input type="checkbox" id="f-fair" checked><span>Fairness layer enabled</span></label>
+        <label class="f"><span>Network load <span class="mono" id="load-v">62%</span></span>
+          <input type="range" id="f-load" min="0" max="95" step="1" value="62"></label>
+        <label class="f"><span>Scenario</span><select id="f-scen"></select></label>
+        <div class="btn-row">
+          <button class="btn" id="reset">Reset network</button>
+          <button class="btn" id="tamper">Forge ledger</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CENTRE ============ -->
+  <div>
+    <div class="card" id="theatre-card">
+      <div class="card-h"><span class="eyebrow">Negotiation</span><div class="spacer"></div>
+        <span class="tiny mono" id="neg-id"></span></div>
+      <div class="card-b" id="theatre">
+        <div class="empty">
+          <div class="eyebrow">Contract Net Protocol</div>
+          <div class="big">Pick an origin hospital and a resource it has run out of, then request a
+            transfer. You will see the call-for-proposals go out, each hospital bid or refuse with its
+            reason, the scoring, and the agreement sealed into the audit ledger.</div>
+          <div class="tiny">Nothing is pre-recorded — this drives the same Python engine as the experiments.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RIGHT ============ -->
+  <div class="col col-right">
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">Network state</span></div>
+      <div class="card-b">
+        <div class="stat-row">
+          <div class="stat"><div class="k">Placed</div><div class="v" id="s-award">0</div></div>
+          <div class="stat"><div class="k">Failed</div><div class="v" id="s-fail">0</div></div>
+          <div class="stat"><div class="k">Burden Gini</div><div class="v" id="s-gini">—</div></div>
+          <div class="stat"><div class="k">Messages</div><div class="v" id="s-msg">0</div></div>
+        </div>
+        <div class="tiny mono" style="margin-top:10px" id="s-decent"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">Transfers accepted</span></div>
+      <div class="card-b"><div class="bar-list" id="burden"></div>
+        <div class="tiny" style="margin-top:9px">Bar width is share of accepted transfers. Watch it even out with the fairness layer on.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">Audit ledger</span><div class="spacer"></div>
+        <span class="pill ok mono" id="led-state">valid</span></div>
+      <div class="card-b"><div class="blocks" id="blocks"></div>
+        <div class="tiny mono" style="margin-top:9px" id="led-note"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span class="eyebrow">Event log</span></div>
+      <div class="card-b"><div id="log"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const el=(t,c,h)=>{const n=document.createElement(t);if(c)n.className=c;if(h!==undefined)n.innerHTML=h;return n};
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const SVGNS="http://www.w3.org/2000/svg";
+const mk=(t,a={})=>{const n=document.createElementNS(SVGNS,t);for(const k in a)n.setAttribute(k,a[k]);return n};
+const nice=s=>String(s).replace(/_/g," ");
+const WINDOWS={2:480,3:240,4:150,5:90};
+const ACNAME={2:"Urgent",3:"Emergent",4:"Critical",5:"Life-threatening"};
+
+let STATE=null, ACUITY=4, BUSY=false, ws=null, lastBlocks=0;
+
+/* ---------------- websocket ---------------- */
+function connect(){
+  const proto=location.protocol==="https:"?"wss":"ws";
+  ws=new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen =()=>{$("#conn").className="dot live"; log("connected","ok")};
+  ws.onclose=()=>{$("#conn").className="dot dead"; log("disconnected — retrying","bad"); setTimeout(connect,1800)};
+  ws.onerror=()=>{$("#conn").className="dot dead"};
+  ws.onmessage=e=>handle(JSON.parse(e.data));
+}
+const send=o=>{ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); };
+
+function handle(m){
+  switch(m.type){
+    case "state": STATE=m.state; renderState(); break;
+    case "negotiation_start": startNeg(m); break;
+    case "step": step(m); break;
+    case "agreement": award(m); setBusy(false); break;
+    case "failed": failed(m); setBusy(false); break;
+    case "tamper": onTamper(m); break;
+    case "reset": clearTheatre(); log("network reset","ok"); break;
+    case "error": log("error: "+m.message,"bad"); setBusy(false); break;
+  }
+}
+
+/* ---------------- log ---------------- */
+function log(msg,kind=""){
+  const box=$("#log");
+  const t=STATE?STATE.clock.split("  ")[1]:"--:--";
+  const l=el("div","l "+kind);
+  l.append(el("span","t",t), el("span","m",esc(msg)));
+  box.prepend(l);
+  while(box.children.length>60) box.lastChild.remove();
+}
+
+/* ---------------- state render ---------------- */
+function renderState(){
+  if(!STATE) return;
+  $("#clock").textContent=STATE.clock;
+  $("#scen").textContent=STATE.scenario+" · seed "+STATE.seed;
+  const T=STATE.totals;
+  $("#p-negs").textContent=T.negotiations+" negotiations";
+  $("#s-award").textContent=T.awarded;
+  $("#s-fail").textContent=T.failed;
+  $("#s-msg").textContent=T.messages;
+  $("#s-gini").textContent=STATE.fairness.burden_gini.toFixed(3);
+  $("#p-priv").textContent=T.privacy_violations+" leaks";
+  $("#p-priv").className="pill "+(T.privacy_violations?"bad":"ok");
+
+  const d=STATE.decentralisation;
+  $("#s-decent").innerHTML=
+    `no node brokers more than <b>${(d.decision_concentration*100).toFixed(0)}%</b> of negotiations `+
+    `or sees more than <b>${(d.disclosure_concentration*100).toFixed(0)}%</b> of disclosures — `+
+    (d.is_decentralised?`<span style="color:var(--good)">decentralised</span>`
+                       :`<span style="color:var(--crit)">centralised</span>`);
+
+  fillSelects();
+  drawMap();
+  drawBurden();
+  drawLedger();
+}
+
+function fillSelects(){
+  const o=$("#f-origin"), keep=o.value;
+  if(o.options.length!==STATE.hospitals.length){
+    o.innerHTML="";
+    STATE.hospitals.forEach(h=>{
+      const op=el("option",null,`${h.id} · ${h.name}`); op.value=h.id; o.append(op);
+    });
+    if(keep) o.value=keep;
+  }
+  const r=$("#f-resource");
+  if(!r.options.length){
+    STATE.resources.forEach(x=>{const op=el("option",null,nice(x));op.value=x;r.append(op)});
+    r.value="icu_bed";
+  }
+  const s=$("#f-specialty");
+  if(!s.options.length){
+    STATE.specialties.forEach(x=>{const op=el("option",null,nice(x));op.value=x;s.append(op)});
+    s.value="general";
+  }
+  const sc=$("#f-scen");
+  if(!sc.options.length){
+    ["baseline","surge","scarcity","surge_scarcity","large_network"].forEach(x=>{
+      const op=el("option",null,nice(x));op.value=x;sc.append(op)});
+    sc.value=STATE.scenario;
+  }
+  $("#f-fair").checked=STATE.fairness_enabled;
+}
+
+/* ---------------- map ---------------- */
+const strainColour=v=>v>0.85?"var(--crit)":v>0.70?"var(--warn)":"var(--good)";
+
+function drawMap(){
+  const svg=$("#map"); svg.innerHTML="";
+  const H=STATE.hospitals;
+  const xs=H.map(h=>h.x), ys=H.map(h=>h.y);
+  const pad=26, span=300-pad*2;
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  const rng=Math.max(maxX-minX,maxY-minY)||1;
+  const px=h=>pad+((h.x-minX)/rng)*span, py=h=>pad+((h.y-minY)/rng)*span;
+  const origin=$("#f-origin").value;
+
+  const beams=mk("g",{id:"beams"}); svg.append(beams);
+
+  H.forEach(h=>{
+    const g=mk("g",{class:"node"+(h.id===origin?" origin":""),"data-id":h.id});
+    const r=6+h.tier*2.2;
+    g.append(mk("circle",{cx:px(h),cy:py(h),r:r+3.5,class:"ring"}));
+    g.append(mk("circle",{cx:px(h),cy:py(h),r:r,fill:strainColour(h.strain),opacity:.9}));
+    const t=mk("text",{x:px(h),y:py(h)+2.6,"text-anchor":"middle",class:"hid"});
+    t.setAttribute("fill","#fff"); t.textContent=h.id.replace("H","");
+    g.append(t);
+    const lb=mk("text",{x:px(h),y:py(h)+r+9,"text-anchor":"middle"});
+    lb.textContent=`T${h.tier} ${(h.strain*100).toFixed(0)}%`;
+    g.append(lb);
+    g.addEventListener("click",()=>{ $("#f-origin").value=h.id; drawMap(); showHosp(h); });
+    g.addEventListener("mouseenter",()=>showHosp(h));
+    svg.append(g);
+  });
+  svg.dataset.px=JSON.stringify(Object.fromEntries(H.map(h=>[h.id,[px(h),py(h)]])));
+}
+
+function showHosp(h){
+  const pools=h.pools.filter(p=>p.capacity>0)
+    .map(p=>`${nice(p.resource)} ${p.available}/${p.capacity}`).join(" · ");
+  $("#hosp-detail").innerHTML=
+    `<b>${h.id}</b> ${esc(h.name)} · tier ${h.tier}<br>`+
+    `${esc(h.specialties.join(", "))}<br>${pools}<br>`+
+    `accepted ${h.accepted} · sent ${h.sent} · fairness credit ${h.fairness_credit>=0?"+":""}${h.fairness_credit}`;
+}
+
+function beam(from,to,winner=false){
+  const svg=$("#map"); if(!svg.dataset.px) return;
+  const P=JSON.parse(svg.dataset.px);
+  if(!P[from]||!P[to]) return;
+  const l=mk("line",{x1:P[from][0],y1:P[from][1],x2:P[to][0],y2:P[to][1],
+                     class:winner?"winbeam":"beam"});
+  $("#beams").append(l);
+  requestAnimationFrame(()=>l.classList.add("on"));
+  if(!winner) setTimeout(()=>l.remove(),1200);
+}
+
+/* ---------------- burden + ledger ---------------- */
+function drawBurden(){
+  const box=$("#burden"); box.innerHTML="";
+  const H=[...STATE.hospitals].sort((a,b)=>b.accepted-a.accepted);
+  const max=Math.max(1,...H.map(h=>h.accepted));
+  H.forEach(h=>{
+    const row=el("div","bar-item");
+    row.append(el("span",null,h.id));
+    const tr=el("div","bar-track"); const f=el("div","bar-fill");
+    f.style.width=(h.accepted/max*100)+"%";
+    if(h.fairness_credit>0.25) f.style.background="var(--warn)";
+    tr.append(f); row.append(tr);
+    row.append(el("span",null,String(h.accepted)));
+    box.append(row);
+  });
+}
+
+function drawLedger(){
+  const L=STATE.ledger, box=$("#blocks"); box.innerHTML="";
+  L.blocks.forEach(b=>{
+    const n=el("div","block"+(b.index>lastBlocks&&b.index>0?" new":""));
+    n.append(el("span","ix","#"+b.index), el("span","hs",b.hash), el("span","n",b.entries+"e"));
+    box.append(n);
+  });
+  lastBlocks=L.total_blocks-1;
+  const pill=$("#led-state"), top=$("#p-ledger");
+  if(L.valid){ pill.className="pill ok mono"; pill.textContent="valid";
+               top.className="pill ok"; top.textContent="ledger ok"; }
+  else{ pill.className="pill bad mono"; pill.textContent="TAMPERED";
+        top.className="pill bad"; top.textContent="ledger broken"; }
+  $("#led-note").innerHTML=L.valid
+    ? `${L.records} agreements · ${L.total_blocks} blocks · ${L.pending} pending seal`
+    : `<span style="color:var(--crit)">${esc(L.errors[0]||"chain broken")}</span>`;
+}
+
+/* ---------------- theatre ---------------- */
+function clearTheatre(){
+  $("#theatre").innerHTML=`<div class="empty"><div class="eyebrow">Ready</div>
+    <div class="big">Request a transfer to watch the protocol run.</div></div>`;
+  $("#neg-id").textContent="";
+}
+
+function startNeg(m){
+  const R=m.request, P=m.privacy;
+  const t=$("#theatre"); t.innerHTML="";
+  $("#neg-id").textContent=R.request_id;
+
+  const wrap=el("div","neg");
+  const head=el("div","neg-head");
+  head.append(el("div","route mono",`<b>${R.origin}</b> needs a bed elsewhere`));
+  head.append(el("span",`chip a${R.acuity}`,`${ACNAME[R.acuity]||R.acuity_name} · acuity ${R.acuity}`));
+  head.append(el("span","chip",nice(R.resource)));
+  head.append(el("span","chip",R.specialty));
+  head.append(el("span","chip",`${R.window_min} min window`));
+  wrap.append(head);
+
+  const pv=el("div","phase");
+  pv.append(el("div","phase-h",`<span class="phase-n">0</span><span class="phase-t">Privacy boundary</span>`));
+  const box=el("div","privacy-box");
+  box.append(el("div","tiny","Stays inside "+R.origin+":"));
+  box.append(el("div","code",`<span class="del">${esc(P.internal_note||"(no note)")}</span>`));
+  box.append(el("div","tiny","Crosses the boundary instead:"));
+  const pub=P.crosses_boundary;
+  box.append(el("div","code",
+    `patient_ref: <span class="redact">${esc(pub.patient_ref)}</span>\n`+
+    `resource: ${esc(pub.resource)} · specialty: ${esc(pub.specialty)} · acuity: ${pub.acuity}\n`+
+    `withheld: <span class="redact">${esc(P.withheld.join(", "))}</span>`));
+  pv.append(box);
+  wrap.append(pv);
+
+  wrap.append(el("div","phase",
+    `<div class="phase-h"><span class="phase-n">1</span><span class="phase-t">Call for proposals</span></div>
+     <div class="small" id="cfp-line">broadcasting…</div>`));
+
+  const bidPhase=el("div","phase");
+  bidPhase.append(el("div","phase-h",
+    `<span class="phase-n">2</span><span class="phase-t">Bids &amp; refusals</span>`));
+  const bids=el("div","bids"); bids.id="bids";
+  bidPhase.append(bids);
+  wrap.append(bidPhase);
+
+  const rank=el("div","phase"); rank.id="rankphase"; rank.style.display="none";
+  wrap.append(rank);
+  const out=el("div"); out.id="outcome";
+  wrap.append(out);
+
+  t.append(wrap);
+  log(`${R.origin} escalation: ${nice(R.resource)} / ${R.specialty} / acuity ${R.acuity}`);
+}
+
+function step(m){
+  if(m.kind==="cfp"){
+    const line=$("#cfp-line");
+    if(line) line.innerHTML=`asked <b>${m.peers.length}</b> peers — `+
+      `<span class="mono">${m.peers.join(", ")}</span>`;
+    m.peers.forEach((p,i)=>setTimeout(()=>beam(m.origin,p),i*55));
+  }
+  if(m.kind==="bid"){
+    const box=$("#bids"); if(!box) return;
+    const n=el("div","bid "+(m.feasible?"yes":"no"));
+    n.append(el("span","who",m.bidder));
+    n.append(el("span","det", m.feasible
+      ? `arrives in ${m.time_to_care} min · ${(m.capability_match*100).toFixed(0)}% specialty match · ${(m.post_accept_strain*100).toFixed(0)}% full after`
+      : nice(m.reason)));
+    n.append(el("span","verdict", m.feasible?"BID":"REFUSE"));
+    box.append(n);
+  }
+  if(m.kind==="scored") renderRank(m);
+}
+
+function renderRank(m){
+  const p=$("#rankphase"); if(!p) return;
+  p.style.display="";
+  p.innerHTML=`<div class="phase-h"><span class="phase-n">3</span>
+    <span class="phase-t">Scoring — origin ranks the bids it received</span></div>`;
+  if(!m.ranked.length){
+    p.append(el("div","small","No bid could meet the clinical window."));
+    return;
+  }
+  const tb=el("table","rank");
+  tb.innerHTML=`<thead><tr><th>Hospital</th><th>Time</th><th>Capability</th>
+    <th>Strain</th><th>Fairness</th><th>Score</th><th>Slack</th></tr></thead>`;
+  const body=el("tbody");
+  m.ranked.forEach((r,i)=>{
+    const tr=el("tr",i===0?"win":null);
+    tr.append(el("td",null,r.bidder));
+    tr.append(el("td",null,r.time_term.toFixed(2)));
+    tr.append(el("td",null,r.capability_term.toFixed(2)));
+    tr.append(el("td",null,r.strain_term.toFixed(2)));
+    const f=el("td",null,(r.fairness_term>=0?"+":"")+r.fairness_term.toFixed(2));
+    f.style.color=r.fairness_term>0.01?"var(--good)":r.fairness_term<-0.01?"var(--warn)":"var(--muted)";
+    tr.append(f);
+    tr.append(el("td",null,`<b>${r.score.toFixed(3)}</b>`));
+    tr.append(el("td",null,r.slack_minutes+"m"));
+    body.append(tr);
+  });
+  tb.append(body); p.append(tb);
+  if(m.missed_deadline.length)
+    p.append(el("div","tiny",`Dropped for missing the clinical window: ${m.missed_deadline.join(", ")}`));
+}
+
+function award(m){
+  const out=$("#outcome"); if(!out) return;
+  const n=el("div","award");
+  const top=el("div","top");
+  top.append(el("div","route",`${m.origin}<span class="arrow">&rarr;</span>${m.winner}`));
+  top.append(el("span","chip",`care in ${m.time_to_care} min`));
+  top.append(el("span","chip",`${m.slack_minutes} min to spare`));
+  if(m.contested) top.append(el("span","chip","contested — coordinator consulted"));
+  n.append(top);
+  n.append(el("div","why",esc(m.rationale)));
+  n.append(el("div","hash",`sealed as ${m.terms_hash||"(pending block)"}`));
+  out.innerHTML=""; out.append(n);
+  beam(m.origin,m.winner,true);
+  log(`${m.origin} → ${m.winner} placed in ${m.time_to_care} min`,"ok");
+}
+
+function failed(m){
+  const out=$("#outcome"); if(!out) return;
+  const n=el("div","fail");
+  n.append(el("div","t","No transfer possible"));
+  n.append(el("div","small",`Reason: ${nice(m.reason)}. The patient stays where they are — this is the outcome MAHROS exists to reduce, and it still happens under enough pressure.`));
+  out.innerHTML=""; out.append(n);
+  log(`failed: ${nice(m.reason)}`,"bad");
+}
+
+function onTamper(m){
+  if(!m.tampered){ log(m.message,"bad"); return; }
+  log(`forged block ${m.block}: ${m.was} → ${m.now}`,"bad");
+  STATE.ledger=m.ledger; drawLedger();
+  const out=$("#outcome");
+  if(out){
+    const n=el("div","fail");
+    n.append(el("div","t","Ledger tampering detected"));
+    n.append(el("div","small",`Block ${m.block} was rewritten to claim ${esc(m.now)} received the patient instead of ${esc(m.was)}. Re-verifying the chain fails immediately — the Merkle root no longer matches. Any member hospital can run this check independently, which is why burden counts derived from the ledger cannot be gamed by self-reporting.`));
+    out.innerHTML=""; out.append(n);
+  }
+}
+
+/* ---------------- controls ---------------- */
+function setBusy(b){
+  BUSY=b;
+  $("#go").disabled=b; $("#auto1").disabled=b; $("#auto10").disabled=b;
+  $("#go").textContent=b?"negotiating…":"Request transfer";
+}
+function acuityNote(){
+  $("#acuity-note").textContent=
+    `${ACNAME[ACUITY]} — ${WINDOWS[ACUITY]} minutes from deterioration to definitive care.`;
+}
+$$("#f-acuity button").forEach(b=>b.onclick=()=>{
+  ACUITY=+b.dataset.a;
+  $$("#f-acuity button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  acuityNote();
+});
+$("#f-pace").oninput=e=>$("#pace-v").textContent=e.target.value+" ms";
+$("#f-load").oninput=e=>$("#load-v").textContent=e.target.value+"%";
+$("#f-origin").onchange=()=>drawMap();
+
+$("#go").onclick=()=>{
+  if(BUSY) return; setBusy(true);
+  send({action:"transfer",origin:$("#f-origin").value,resource:$("#f-resource").value,
+        specialty:$("#f-specialty").value,acuity:ACUITY,
+        patient_name:$("#f-name").value,patient_note:$("#f-note").value,
+        pace_ms:+$("#f-pace").value});
+};
+$("#auto1").onclick=()=>{ if(BUSY)return; setBusy(true);
+  send({action:"auto",count:1,pace_ms:+$("#f-pace").value}); };
+$("#auto10").onclick=()=>{ if(BUSY)return; setBusy(true);
+  send({action:"auto",count:10,pace_ms:90}); };
+$("#f-fair").onchange=e=>{ send({action:"fairness",enabled:e.target.checked});
+  log("fairness layer "+(e.target.checked?"on":"off")); };
+$("#tamper").onclick=()=>send({action:"tamper"});
+$("#reset").onclick=()=>{
+  send({action:"reset",scenario:$("#f-scen").value,seed:42,
+        load:+$("#f-load").value/100,fairness_enabled:$("#f-fair").checked});
+  lastBlocks=0;
+};
+
+/* theme */
+const mq=window.matchMedia?matchMedia("(prefers-color-scheme: dark)"):null;
+const isDark=()=>{const e=document.documentElement.getAttribute("data-theme");
+  return e?e==="dark":(mq?mq.matches:false)};
+$("#theme").onclick=()=>{
+  document.documentElement.setAttribute("data-theme",isDark()?"light":"dark");
+  $("#theme").textContent=isDark()?"light":"dark";
+  if(STATE) renderState();
+};
+$("#theme").textContent=isDark()?"light":"dark";
+
+acuityNote();
+connect();
+</script>
+</body>
+</html>
