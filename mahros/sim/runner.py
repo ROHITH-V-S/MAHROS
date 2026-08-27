@@ -34,6 +34,7 @@ from ..core.types import (
     TransferRequest,
 )
 from ..fairness.metrics import FairnessLedger, equity_report
+from ..hospital.behaviours import assign_policies
 from ..hospital.hospital import Hospital, HospitalConfig
 from ..ledger.interface import HashChainLedger, LedgerBackend
 from ..llm.coordinator import LLMCoordinator
@@ -72,6 +73,21 @@ class RunConfig:
     retry_interval_minutes: float = 20.0   # re-attempt a failed transfer
     sample_interval_minutes: float = 30.0
 
+    # -- who is being straight with whom ---------------------------------- #
+    #: Fraction of hospitals that will fabricate a refusal to dodge a transfer
+    #: they do not want. 0.0 reproduces every pre-existing result exactly.
+    strategic_fraction: float = 0.0
+    #: Fraction that are honest but hold a larger reserve. These are the
+    #: control against false accusation: their refusals are all defensible.
+    defensive_fraction: float = 0.0
+    #: P(fabricate | a strategic hospital would rather not take this patient).
+    #: 1.0 models a consistent protective policy rather than a coin flip.
+    shirk_prob: float = 1.0
+    #: Occupancy above which a strategic hospital starts protecting capacity.
+    shirk_comfort_threshold: float = 0.55
+    #: Challenge refusals the ledger contradicts. Off = plain Contract Net.
+    enable_argumentation: bool = True
+
 
 @dataclass
 class RunResult:
@@ -99,8 +115,28 @@ class SimulationRunner:
         # -- network -------------------------------------------------------- #
         hospital_cfgs: list[HospitalConfig] = build_network(self.scenario)
         self.sim = Simulator(self.scenario.horizon_hours * 60.0)
+
+        # Who behaves how. Assignment is deterministic in (fraction, seed), so
+        # raising the strategic fraction adds liars to the existing set rather
+        # than reshuffling which hospitals are lying -- otherwise the
+        # adversarial sweep would confound dose with identity.
+        self.policies = assign_policies(
+            [hc.hospital_id for hc in hospital_cfgs],
+            strategic_fraction=cfg.strategic_fraction,
+            defensive_fraction=cfg.defensive_fraction,
+            shirk_prob=cfg.shirk_prob,
+            comfort_threshold=cfg.shirk_comfort_threshold,
+            seed=cfg.seed,
+            # Tier is the incentive to shirk: the tertiary centre holding the
+            # region's scarce capability is asked for everything and gains the
+            # most from saying no. Modelling the adversary where it would
+            # actually appear, rather than uniformly at random.
+            incentive_rank={hc.hospital_id: float(hc.tier) for hc in hospital_cfgs},
+        )
         self.hospitals: dict[str, Hospital] = {
-            hc.hospital_id: Hospital(hc, self.sim) for hc in hospital_cfgs
+            hc.hospital_id: Hospital(
+                hc, self.sim, policy=self.policies[hc.hospital_id], seed=cfg.seed)
+            for hc in hospital_cfgs
         }
         self._tt = travel_time_matrix(hospital_cfgs, self.scenario.ambulance_speed_kmh)
 
@@ -126,9 +162,11 @@ class SimulationRunner:
             bus=self.bus,
             ledger=self.ledger,
             weights=ScoringWeights(fairness_enabled=cfg.fairness_enabled),
-            cnp=CNPConfig(enable_llm_arbitration=cfg.llm_arbitration),
+            cnp=CNPConfig(enable_llm_arbitration=cfg.llm_arbitration,
+                          enable_argumentation=cfg.enable_argumentation),
             coordinator=self.coordinator,
             rng=random.Random(cfg.seed + 555),
+            sim=self.sim,
         )
         self.strategy = STRATEGIES[cfg.strategy](self.ctx)
 

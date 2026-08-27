@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MAHROS Control Board</title>
 <style>
 /* ---------------------------------------------------------------------------
@@ -19,7 +24,8 @@
   /* categorical - identity, fixed order, never cycled */
   --s1: #02959F;   /* MAHROS */
   --s2: #C4455F;   /* Phone tree */
-  --s3: #5560D8;   /* Centralized */
+  --s3: #5560D8;   /* Centralized (greedy) */
+  --s4: #8A6A1F;   /* Batched optimal */
   --s-neutral: #97A6B4;
 
   /* status - reserved, never reused as a series colour */
@@ -52,6 +58,7 @@
     --s1: #1E9EA8;
     --s2: #D25B71;
     --s3: #7580E2;
+    --s4: #C8A34A;
     --s-neutral: #5C7085;
 
     --good: #3DA16E;
@@ -78,6 +85,7 @@
   --s1: #1E9EA8;
   --s2: #D25B71;
   --s3: #7580E2;
+  --s4: #C8A34A;
   --s-neutral: #5C7085;
 
   --good: #3DA16E;
@@ -353,6 +361,8 @@ footer .num { color: var(--muted); }
   .tile .v { font-size: 28px; }
 }
 </style>
+</head>
+<body>
 
 <div class="mast">
   <div class="mast-in">
@@ -381,7 +391,7 @@ footer .num { color: var(--muted); }
     <div class="badges">
       <span class="pill ok">Runs end to end</span>
       <span class="pill">Discrete-event simulation</span>
-      <span class="pill">5 seeds &times; 4 scenarios &times; 5 strategies</span>
+      <span class="pill">5 seeds &times; 4 scenarios &times; 6 strategies</span>
       <span class="pill">Zero paid services</span>
     </div>
   </div>
@@ -395,7 +405,7 @@ footer .num { color: var(--muted); }
       <div class="eyebrow">01 &nbsp;/&nbsp; Head to head</div>
       <h2>How MAHROS compares to the alternatives</h2>
       <p class="small">
-        Five allocation strategies run on identical patient streams, so any difference
+        Six allocation strategies run on identical patient streams, so any difference
         is the allocation logic alone. Whiskers are 95% confidence intervals across
         <span class="num" id="seed-count"></span> seeds.
       </p>
@@ -562,7 +572,8 @@ const num3 = (v) => v.toFixed(3);
 const SERIES = {
   mahros:  { key: "--s1", label: "MAHROS" },
   phone:   { key: "--s2", label: "Phone tree (today)" },
-  central: { key: "--s3", label: "Centralized (omniscient)" },
+  central: { key: "--s3", label: "Centralized (greedy, omniscient)" },
+  optimal: { key: "--s4", label: "Batched optimal (joint solve)" },
   nearest: { key: "--s-neutral", label: "Nearest available" },
   none:    { key: "--s-neutral", label: "No transfers" },
 };
@@ -1247,3 +1258,6 @@ renderNotes();
 initTheme();
 addEventListener("resize", () => { hideTip(); });
 </script>
+
+</body>
+</html>

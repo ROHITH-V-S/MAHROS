@@ -1,6 +1,8 @@
 # Demo runbook
 
-One page. Read it once the night before, glance at it on the day.
+One page. Read it the night before, glance at it on the day.
+For *what to say* and the questions you will be asked, see
+[PANEL_GUIDE.md](PANEL_GUIDE.md).
 
 ---
 
@@ -13,132 +15,129 @@ python -m mahros.server
 
 Leave that terminal open. Open **http://127.0.0.1:8000**.
 
-Two tabs in the top bar: **Live sim** and **Results**.
+Two tabs in the top bar: **Live negotiation** and **Results**.
 
-Sanity check, 30 seconds:
-1. Click **▶ Run continuously** — cases start negotiating on their own.
-2. Let it run to ~15 transfers, then click **Forge ledger** — the ledger pill turns red.
-3. Click **Results** — charts load.
+Sanity check, 60 seconds:
 
-If all three work, you are ready. Stop continuous mode and click **Reset network**
-so you start clean.
+1. Click **▶ Run continuously** — cases start negotiating on their own. Stop it.
+2. Click **Fake a record** — the *records intact* pill turns red.
+3. Click **Results** — the charts load.
+4. Click **Start over** so you begin clean.
+
+If the Results tab is empty, you have not built it yet:
+
+```
+python experiments/run_all.py 5
+python experiments/build_dashboard.py
+```
 
 ---
 
 ## The 3-minute version
 
-**1. Frame the problem (30s).** "A patient is already admitted and stabilised.
-They deteriorate and now need an ICU bed or a surgeon their hospital doesn't have
-free. Someone has to find a bed elsewhere. Today that's a person making phone
-calls, one at a time. About 3.5% of US admissions are transfers like this —
-roughly 1.5 million a year."
+### 1. Frame the problem (30 s)
 
-**2. Run one case (60s).** Set origin to a **primary hospital (T1)**, resource
-**cath lab**, specialty **cardiac**, acuity **5**. Hit **Request transfer**.
+> "A patient is already admitted and stabilised, and then deteriorates. They now
+> need an ICU bed, or a cath lab, that this hospital hasn't got. Today, a human
+> being picks up a phone and calls hospitals one at a time. That takes about
+> forty-seven minutes of staff time per transfer, and by the sixth call the
+> information from the first is out of date."
 
-Talk over it as it runs:
-- "It's asking 8 peers at once — that's the point, a phone call is serial."
-- "Most refuse, and they say *why*: `no_specialty_capability`. Only two hospitals
-  in this network have a cath lab. It's not a bed shortage, it's a capability
-  shortage."
-- Point at the scoring table: "Time, capability, strain, fairness — each broken
-  out. Nothing is a black box."
-- Point at the rationale: "Every agreement carries the reason it was made, in
-  plain English, and it's on the ledger."
+### 2. Show the parallel ask (45 s)
 
-**3. Show the two properties nobody else combines (60s).**
-- Uncheck **Fairness layer enabled**, run continuously ~20 cases, show the burden
-  bars skewing. Re-enable it, show them evening out.
-- Click **Forge ledger**: "A hospital tries to under-report what it accepted.
-  The Merkle root no longer matches. Any member hospital can check this
-  independently — which is why the fairness counts can't be gamed."
+Set up **cath lab / cardiac / acuity 5**. Press **Find this patient a bed**.
 
-**4. Land the result (30s).** Switch to the **Results** tab.
-"Against a phone tree: +31% relative success rate, 62% fewer safe-window
-breaches, 98% less coordinator time. Against a *centralized* system that sees
-every hospital's private data: statistically indistinguishable — 87.0% vs 86.3%
-— while no node in my system brokers more than 15% of negotiations. That's the
-contribution: central-authority performance without the central authority."
+Point at the transcript as it fills:
 
----
+> "Every hospital is asked at the same moment, and each one answers for itself —
+> in its own words. Notice most of them are refusing because they don't *have* a
+> cath lab, not because they're full. That's the whole reason transfers exist:
+> it's scarce capability, not bed count."
 
-## Questions you will get
+Point at the countdown bar at the top of the panel — the clinical window burning
+down.
 
-**"Isn't it faster to just phone around?"**
-For one transfer, yes. This is about ten transfers at once during a surge, when
-your coordinators are already saturated. The phone-tree baseline in my model
-consumes 47 minutes of staff time per transfer; mine consumes 1.1. And a phone
-call leaves no auditable record and no fairness tracking across months.
+### 3. The turn — make a hospital dishonest (60 s)
 
-**"Why would a hospital give up its patients?"**
-It isn't zero-sum — hospitals both send and receive, and the fairness layer is
-what makes that balance real instead of assumed. It's also already standard
-practice, driven by duty of care and liability. Framed as deployment *within* a
-hospital network or trust, not between rivals.
+In **Are they telling the truth?**, find a tier-3 hospital and click its button
+so it reads **protective**.
 
-**"Is the LLM making the decisions?"**
-No, and deliberately. The deterministic scorer picks the winner; the LLM writes
-the explanation. If the LLM chose, none of my numbers would be reproducible.
-Letting it arbitrate is available as an ablation — and finding it *doesn't* beat
-the rule is a legitimate result.
+> "Accepting a transfer costs a hospital a bed it may need tonight. The cheapest
+> way to avoid one is to say you haven't got one. In an ordinary auction nobody
+> can check that."
 
-**"Is this a real blockchain?"**
-It's a permissioned consortium ledger, and I'd defend that as the correct
-choice — hospitals in one health system don't need permissionless consensus.
-What they need is append-only, tamper-evident, independently verifiable. The
-default is a Merkle hash chain; there's a Solidity contract for when you want
-multi-party consensus and two-sided attestation.
+Run the same case again. It refuses.
 
-**"How do you know the simulation is realistic?"**
-I don't fully, and I'd say so. One external check: transfers come out at 3.7–4.3%
-of admissions against the ~3.5% real-world figure — and I didn't tune for that,
-it fell out of the escalation model. Everything else is a documented assumption
-in `docs/MODEL_ASSUMPTIONS.md`.
+Now point at what happens next:
 
-**"What's the weakest part?"** *(Have this answer ready — it lands well.)*
-Two things. The 25% stale-information rate in my phone-tree baseline is
-plausible but unsourced, and it drives a chunk of my headline win — it needs
-sensitivity analysis. And I model hospitals as honest bidders; a hospital that
-strategically under-reports capacity to dodge transfers would defeat the current
-design. The ledger deters denial after the fact, not misreporting before it.
+- the **challenge** bubble, with the evidence card underneath it
+- the hospital failing to justify itself
+- **REFUSAL STRUCK OUT**
+- the **argument map** — green boxes survived, dashed red ones were defeated
+
+> "The refusal was checked against the shared record. Nobody revealed a bed count
+> — it was checked against what that hospital has already agreed to take. If you
+> declined an ICU patient and accepted a different one twenty minutes later, you
+> had a bed."
+
+### 4. The ablation, live (30 s)
+
+Turn **off** "Check refusals against the shared record". Run it again.
+
+> "Same hospital, same lie, and now it simply works. That's the comparison in the
+> paper — except there we run it across five thousand transfers instead of one."
+
+Turn it back on.
+
+### 5. Land it (15 s)
+
+Point at the masthead: **"0 wrongly accused"**.
+
+> "The mechanism has never once overruled a hospital that was telling the truth.
+> That's the number that decides whether you could deploy this — a system that
+> punished caution instead of dishonesty would be worse than useless."
+
+Finish on **Fake a record** if you have time: the chain check fails instantly.
 
 ---
 
-## If something breaks
+## Things that will go wrong, and what to do
 
-**`[Errno 10048]` / port in use** — a server is already running. Either just open
-the page, or use `python -m mahros.server --port 8001`.
+**"I made it protective but nothing gets caught."**
+The network is too full — a protective hospital only lies when it genuinely has
+a bed, so when the network is full its refusals are simply *true*. Drag **How
+busy is the network?** down to ~50% and press **Start over**.
 
-**Page loads but nothing happens on click** — the WebSocket dropped. The dot next
-to "MAHROS" top-left is grey/red instead of green. Refresh the page.
+Say it out loud if it happens: *"it's not lying here because it really is full —
+that's the mechanism behaving correctly."* It sounds much better than silence.
 
-**Results tab is blank** — the sweep hasn't been built:
-```
-python experiments/run_all.py 5
-python experiments/build_dashboard.py
-```
-(~3 minutes.)
+**"No challenge appears at all."**
+Challenges need history. Click **Run 10 fast** first to build up a record, then
+run your case.
 
-**Everything is on fire** — fall back to the terminal, it needs no server:
-```
-python -m mahros.cli compare --scenario surge_scarcity --seeds 3
-python -m mahros.cli verify
-python -m pytest tests -q
-```
+**"The page is blank / the dot is red."**
+The server died. Restart it in the terminal; the page reconnects on its own.
 
-**Total fallback** — the Results dashboard is also published as a static page you
-can open on any machine with a browser, no Python needed. Have the URL saved.
+**"Results tab shows an error page."**
+You haven't built the dashboard. Use the two commands above, or just skip the
+tab — the live demo is the interesting half.
+
+**Someone asks for the code mid-demo.**
+`mahros/negotiation/argumentation.py` is the contribution and is about 200 lines
+of well-commented Python. `mahros/negotiation/challenge.py` is what makes the
+ledger evidence.
 
 ---
 
-## Numbers worth memorising
+## If you only get 60 seconds
 
-| | MAHROS | Phone tree | Centralized |
-|---|---|---|---|
-| Success rate | 87.0% | 66.2% | 86.3% |
-| Mean time to care | 66.5 min | 88.0 min | 68.5 min |
-| Staff min/transfer | 1.1 | 47.3 | 0.0 |
-| Burden Gini | 0.265 | 0.356 | 0.256 |
-| Decisions brokered by one node | 14.7% | 13.6% | 100% |
+Skip steps 1 and 2. Make a hospital protective, run one case, point at the
+challenge and the struck-out refusal, and say:
 
-5 seeds, surge + scarcity scenario, 95% CI. 50 tests passing. TRL 3–4.
+> "Hospitals have a reason to refuse transfers they don't want. Our protocol lets
+> a refusal be challenged against a shared record, and the hospital has to
+> justify it. An honest refusal always can. A fabricated one can't. It recovers
+> about 40% of the damage that dishonest refusals do to the network, and it has
+> never wrongly accused a hospital that was telling the truth."
+
+That is the whole project in four sentences.

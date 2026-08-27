@@ -30,6 +30,7 @@ from ..core.types import (
     TransferRequest,
 )
 from ..fairness.metrics import FairnessLedger, equity_report
+from ..hospital.behaviours import POLICIES, HonestPolicy, StrategicPolicy
 from ..hospital.hospital import Hospital
 from ..ledger.interface import HashChainLedger
 from ..llm.coordinator import LLMCoordinator
@@ -63,6 +64,7 @@ class LiveNetwork:
         seed: int = 42,
         fairness_enabled: bool = True,
         llm_enabled: bool = False,
+        argumentation_enabled: bool = True,
     ) -> None:
         self.scenario_name = scenario
         self.seed = seed
@@ -73,8 +75,10 @@ class LiveNetwork:
         hospital_cfgs = build_network(cfg)
 
         self.now: float = 8 * 60.0          # start the clock at 08:00
+        self.argumentation_enabled = argumentation_enabled
         self.hospitals: dict[str, Hospital] = {
-            hc.hospital_id: Hospital(hc, self) for hc in hospital_cfgs
+            hc.hospital_id: Hospital(hc, self, policy=HonestPolicy(), seed=seed)
+            for hc in hospital_cfgs
         }
         self._tt = travel_time_matrix(hospital_cfgs, cfg.ambulance_speed_kmh)
 
@@ -102,7 +106,7 @@ class LiveNetwork:
             fairness=self.fairness,
             privacy=self.privacy,
             weights=ScoringWeights(fairness_enabled=fairness_enabled),
-            config=CNPConfig(),
+            config=CNPConfig(enable_argumentation=argumentation_enabled),
             coordinator=self.coordinator,
             ledger=self.ledger,
             observer=self._observe,
@@ -241,14 +245,26 @@ class LiveNetwork:
 
         if outcome.agreement is not None:
             a = outcome.agreement
+            # The `awarded` trace step carries the presentation fields the
+            # console renders -- origin, winner, time_to_care, slack_minutes,
+            # contested. The server deliberately filters terminal steps out of
+            # the raw stream so the outcome does not render twice, so those
+            # fields have to be merged in here. Without this the award panel
+            # reads keys that do not exist and prints `undefined`.
+            awarded = next((s for s in steps if s["kind"] == "awarded"), {})
             result["agreement"] = {
                 "agreement_id": a.agreement_id,
                 "receiver": a.receiver,
+                "winner": a.receiver,
                 "receiver_name": self.hospitals[a.receiver].name,
+                "origin": origin,
                 "terms_hash": a.terms_hash,
                 "rationale": a.rationale,
                 "decided_by": a.decided_by,
                 "care_starts_in_min": round(a.promised_care_start - req.created_at, 1),
+                "time_to_care": awarded.get("time_to_care"),
+                "slack_minutes": awarded.get("slack_minutes"),
+                "contested": awarded.get("contested", False),
                 "sealed_block": len(self.ledger.chain) > before_blocks,
             }
             # The patient actually arrives and occupies the bed.
@@ -352,6 +368,7 @@ class LiveNetwork:
             },
             "ledger": self.ledger_state(),
             "decentralisation": self.bus.audit_no_global_view(set(self.hospitals)),
+            "integrity": self.integrity(),
             "resources": [r.value for r in ResourceType],
             "specialties": [s.value for s in Specialty],
         }
@@ -407,6 +424,60 @@ class LiveNetwork:
         self.fairness_enabled = enabled
         self.negotiator.weights = ScoringWeights(fairness_enabled=enabled)
         return {"fairness_enabled": enabled}
+
+    # -- behaviour controls: the part an audience remembers ---------------- #
+    def set_policy(self, hospital_id: str, policy: str) -> dict:
+        """Change how one hospital behaves. This is the demo's turning point.
+
+        Switch a hospital to `strategic` and it starts protecting its beds by
+        claiming it has none. Run the same transfer again and watch the network
+        check that claim against the shared record and hold it to account.
+        """
+        if hospital_id not in self.hospitals:
+            raise KeyError(f"unknown hospital {hospital_id}")
+        if policy not in POLICIES:
+            raise ValueError(f"unknown policy {policy}")
+        self.hospitals[hospital_id].policy = POLICIES[policy]()
+        return {"hospital": hospital_id, "policy": policy}
+
+    def set_argumentation(self, enabled: bool) -> dict:
+        """Turn the deliberation phase on or off.
+
+        Off is a plain Contract Net: refusals are taken at face value, and a
+        hospital that is not being straight simply gets away with it. This
+        toggle is the ablation the paper reports, run live.
+        """
+        self.argumentation_enabled = enabled
+        self.negotiator.config.enable_argumentation = enabled
+        return {"argumentation_enabled": enabled}
+
+    def integrity(self) -> dict:
+        """Who has been held to account, and who has been wrongly accused.
+
+        `false_accusations` must stay at zero. If a hospital that told the truth
+        is ever overruled, the mechanism is punishing caution instead of deceit
+        and should not be deployed. It is on the dashboard for that reason.
+        """
+        rows = []
+        for hid, h in sorted(self.hospitals.items()):
+            rows.append({
+                "id": hid,
+                "policy": h.policy.name,
+                "refusals_overruled": h.refusals_overruled,
+                "statements": len(h._statements),
+            })
+        neg = self.negotiator
+        honest_overruled = sum(
+            h.refusals_overruled for h in self.hospitals.values()
+            if h.policy.name != "strategic")
+        return {
+            "hospitals": rows,
+            "challenges_raised": neg.total_challenges,
+            "refusals_overruled": neg.total_overruled,
+            "burden_objections": neg.total_burden_objections,
+            "false_accusations": honest_overruled,
+            "argumentation_enabled": self.argumentation_enabled,
+        }
 
     def equity(self) -> dict:
         return equity_report([]).as_dict()

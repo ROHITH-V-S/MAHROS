@@ -1,0 +1,118 @@
+{
+  "source": {
+    "dataset": "COVID-19 Reported Patient Impact and Hospital Capacity by Facility",
+    "publisher": "U.S. Department of Health & Human Services / CDC NHSN",
+    "endpoint": "https://healthdata.gov/resource/anag-cw7u.json",
+    "collection_week": "2021-01-10",
+    "filter": "hospital_subtype == 'Short Term' AND inpatient_beds_7_day_avg >= 5",
+    "note": "Facility-level public data. Values of -999999 denote CDC privacy suppression of small counts and are dropped, not imputed.",
+    "license": "U.S. Public Domain (federal open data)",
+    "n_rows_pulled": 5007,
+    "n_hospitals_used": 3186
+  },
+  "tier_split": {
+    "rule": "inpatient-bed percentiles",
+    "p55": 154.9,
+    "p88": 426.0,
+    "counts": {
+      "1": 1752,
+      "2": 1051,
+      "3": 383
+    }
+  },
+  "tiers": {
+    "1": {
+      "n": 1752,
+      "inpatient_beds": {
+        "p25": 33.1,
+        "median": 60.0,
+        "p75": 100.0,
+        "lognormal": {
+          "mu": 3.999,
+          "sigma": 0.7351
+        }
+      },
+      "staffed_adult_icu_beds": {
+        "p25": 0.0,
+        "median": 7.7,
+        "p75": 12.0
+      },
+      "icu_to_inpatient_ratio": {
+        "median": 0.1077,
+        "p25": 0.0,
+        "p75": 0.1619
+      },
+      "share_with_zero_icu": 0.2763
+    },
+    "2": {
+      "n": 1051,
+      "inpatient_beds": {
+        "p25": 191.0,
+        "median": 242.7,
+        "p75": 308.0,
+        "lognormal": {
+          "mu": 5.5031,
+          "sigma": 0.282
+        }
+      },
+      "staffed_adult_icu_beds": {
+        "p25": 20.0,
+        "median": 30.0,
+        "p75": 42.0
+      },
+      "icu_to_inpatient_ratio": {
+        "median": 0.118,
+        "p25": 0.0901,
+        "p75": 0.1578
+      },
+      "share_with_zero_icu": 0.0105
+    },
+    "3": {
+      "n": 383,
+      "inpatient_beds": {
+        "p25": 495.0,
+        "median": 618.1,
+        "p75": 785.8,
+        "lognormal": {
+          "mu": 6.4769,
+          "sigma": 0.3442
+        }
+      },
+      "staffed_adult_icu_beds": {
+        "p25": 56.7,
+        "median": 82.0,
+        "p75": 117.8
+      },
+      "icu_to_inpatient_ratio": {
+        "median": 0.1267,
+        "p25": 0.1018,
+        "p75": 0.1601
+      },
+      "share_with_zero_icu": 0.0078
+    }
+  },
+  "occupancy": {
+    "inpatient": {
+      "mean": 0.6997,
+      "p10": 0.3891,
+      "p25": 0.5634,
+      "median": 0.7383,
+      "p75": 0.8668,
+      "p90": 0.9524,
+      "n": 3100
+    },
+    "icu": {
+      "mean": 0.8027,
+      "p10": 0.5285,
+      "p25": 0.695,
+      "median": 0.8544,
+      "p75": 0.95,
+      "p90": 1.0,
+      "n": 2429
+    }
+  },
+  "capability": {
+    "share_all_hospitals_with_zero_icu": 0.1563,
+    "interpretation": "Critical-care capability is concentrated: a large minority of small hospitals cannot escalate at all, which is the structural reason interhospital transfer exists."
+  }
+}

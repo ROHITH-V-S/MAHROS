@@ -49,6 +49,21 @@ class EventQueue:
     def __len__(self) -> int:
         return len(self._heap)
 
+    def peek_until(self, horizon: float, kind: str) -> list[Any]:
+        """Payloads of pending `kind` events firing at or before `horizon`.
+
+        This exists for exactly one caller: the batching central optimiser,
+        which collects transfer requests for a few minutes before solving them
+        jointly. Looking `window` minutes ahead is what "batch for `window`
+        minutes" *means* -- and that arm pays the delay in its own results.
+
+        It is deliberately not available to MAHROS. A decentralised protocol
+        that peeked at other hospitals' pending escalations would be a central
+        authority wearing a disguise, and the comparison would be worthless.
+        """
+        return [e.payload for e in self._heap
+                if e.kind == kind and e.time <= horizon]
+
 
 class Simulator:
     """Minimal event loop. Handlers are registered per event kind."""

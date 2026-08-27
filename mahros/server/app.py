@@ -32,7 +32,12 @@ app = FastAPI(title="MAHROS live demo", docs_url="/api/docs")
 # multi-tenant service -- everyone connected watches the same hospitals, which
 # is exactly what you want when projecting it in a room.
 NET = LiveNetwork(scenario="baseline", seed=42)
-NET.seed_load(0.62)
+# 55% occupancy: the 25th percentile of the 3,186 real hospitals in the HHS
+# reference data, and the regime where a protective hospital genuinely *has* a
+# bed to give -- which is what makes a fabricated refusal a fabrication rather
+# than an accurate "we are full". Push the slider up and the demo shows the
+# other honest outcome: at high occupancy most refusals are simply true.
+NET.seed_load(0.55)
 
 
 # --------------------------------------------------------------------------- #
@@ -52,9 +57,19 @@ class TransferBody(BaseModel):
 class ResetBody(BaseModel):
     scenario: str = "baseline"
     seed: int = 42
-    load: float = 0.62
+    load: float = 0.55
     fairness_enabled: bool = True
     llm_enabled: bool = False
+    argumentation_enabled: bool = True
+
+
+class PolicyBody(BaseModel):
+    hospital: str
+    policy: str = "honest"
+
+
+class ArgumentationBody(BaseModel):
+    enabled: bool
 
 
 class OccupancyBody(BaseModel):
@@ -136,6 +151,7 @@ def reset(body: ResetBody):
         seed=body.seed,
         fairness_enabled=body.fairness_enabled,
         llm_enabled=body.llm_enabled,
+        argumentation_enabled=body.argumentation_enabled,
     )
     NET.seed_load(body.load)
     return NET.state()
@@ -152,6 +168,26 @@ def set_occupancy(body: OccupancyBody):
 @app.post("/api/fairness")
 def set_fairness(body: FairnessBody):
     return NET.set_fairness(body.enabled)
+
+
+@app.post("/api/policy")
+def set_policy(body: PolicyBody):
+    """Make one hospital protective, or honest again."""
+    try:
+        return NET.set_policy(body.hospital, body.policy)
+    except (KeyError, ValueError) as exc:
+        return JSONResponse({"error": str(exc)}, 400)
+
+
+@app.post("/api/argumentation")
+def set_argumentation(body: ArgumentationBody):
+    return NET.set_argumentation(body.enabled)
+
+
+@app.get("/api/integrity")
+def integrity():
+    """Who was held to account, and whether anyone was wrongly accused."""
+    return NET.integrity()
 
 
 @app.post("/api/tamper")
@@ -216,6 +252,7 @@ async def stream_negotiation(result: dict, pace_ms: int) -> None:
     """Replay a completed negotiation step by step, paced for a human."""
     pace = max(0, min(pace_ms, 3000)) / 1000.0
 
+    await hub.send_all({"type": "busy", "busy": True})
     await hub.send_all({"type": "negotiation_start",
                         "request": result["request"],
                         "privacy": result["privacy"]})
@@ -243,6 +280,7 @@ async def stream_negotiation(result: dict, pace_ms: int) -> None:
 
     await asyncio.sleep(pace * 0.5)
     await hub.send_all({"type": "state", "state": NET.state()})
+    await hub.send_all({"type": "busy", "busy": False})
 
 
 @app.websocket("/ws")
@@ -291,6 +329,22 @@ async def ws_endpoint(ws: WebSocket):
                 NET.set_fairness(bool(msg.get("enabled", True)))
                 await hub.send_all({"type": "state", "state": NET.state()})
 
+            elif action == "argumentation":
+                NET.set_argumentation(bool(msg.get("enabled", True)))
+                await hub.send_all({"type": "state", "state": NET.state()})
+
+            elif action == "policy":
+                # Make a hospital protective (or honest again). This is the
+                # control that turns the demo into an experiment: run the same
+                # case before and after, with checking on and off.
+                try:
+                    res = NET.set_policy(msg["hospital"], msg.get("policy", "honest"))
+                except (KeyError, ValueError) as exc:
+                    await ws.send_text(json.dumps({"type": "error", "message": str(exc)}))
+                    continue
+                await hub.send_all({"type": "policy", **res})
+                await hub.send_all({"type": "state", "state": NET.state()})
+
             elif action == "occupancy":
                 try:
                     NET.set_occupancy(msg["hospital"], msg["resource"],
@@ -305,6 +359,7 @@ async def ws_endpoint(ws: WebSocket):
                     scenario=msg.get("scenario", "baseline"),
                     seed=int(msg.get("seed", 42)),
                     fairness_enabled=bool(msg.get("fairness_enabled", True)),
+                    argumentation_enabled=bool(msg.get("argumentation_enabled", True)),
                 )
                 NET.seed_load(float(msg.get("load", 0.62)))
                 await hub.send_all({"type": "reset"})

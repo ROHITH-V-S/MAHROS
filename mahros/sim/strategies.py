@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ..core.types import Agreement, RequestStatus, TransferRequest
+from ..eval.assignment import INF, linear_sum_assignment
 from ..fairness.metrics import FairnessLedger
 from ..negotiation.cnp import CNPConfig, ContractNetNegotiator
 from ..negotiation.messages import Message, MessageBus, Perf
@@ -80,6 +81,9 @@ class StrategyContext:
     cnp: CNPConfig
     coordinator: Any = None
     rng: random.Random = field(default_factory=lambda: random.Random(7))
+    #: The event loop. Only the batching optimiser reads it, and only to see
+    #: which requests fall inside its own collection window.
+    sim: Any = None
 
 
 # --------------------------------------------------------------------------- #
@@ -135,9 +139,20 @@ class MahrosStrategy(Strategy):
         )
 
     def stats(self) -> dict[str, Any]:
+        neg = self.negotiator
+        # How many refusals were fabricated, and how many the mechanism caught.
+        # `misreports` is read from the hospitals' private records: it is ground
+        # truth available to the *experiment*, never to the protocol.
+        misreports = sum(getattr(h, "misreports", 0) for h in self.ctx.hospitals.values())
         return {
             "contested_decisions": self.contested,
             "mean_rounds": round(self.rounds_used / max(1, self.contested + 1), 2),
+            "deliberations": neg.deliberations,
+            "challenges_raised": neg.total_challenges,
+            "refusals_overruled": neg.total_overruled,
+            "burden_objections": neg.total_burden_objections,
+            "misreports": misreports,
+            "detection_rate": round(neg.total_overruled / misreports, 4) if misreports else 0.0,
         }
 
 
@@ -201,6 +216,21 @@ class PhoneTreeStrategy(Strategy):
 
             hosp = self.ctx.hospitals[peer]
             bid = hosp.evaluate(public, self.ctx.travel_time(req.origin, peer), t)
+            # Log the answer, not just the question. A phone call discloses just
+            # as much as a protocol message -- the coordinator on the other end
+            # hears "we're down to our last bed" exactly the same way. Omitting
+            # these made the phone tree look like it leaked nothing at all,
+            # which flattered the wrong arm. See mahros/privacy/leakage.py.
+            self.ctx.bus.send(
+                Message(
+                    Perf.PROPOSE if bid.feasible else Perf.REFUSE,
+                    peer, req.origin, req.request_id,
+                    {"feasible": bid.feasible, "eta": round(bid.time_to_care, 1),
+                     "capability": round(bid.capability_match, 2),
+                     "reason": bid.refusal_reason},
+                    t,
+                )
+            )
             if not bid.feasible:
                 continue
 
@@ -353,7 +383,9 @@ class NearestAvailableStrategy(Strategy):
                 Message(
                     Perf.PROPOSE if bid.feasible else Perf.REFUSE,
                     peer, self.NODE, req.request_id,
-                    {"feasible": bid.feasible, "eta": round(bid.time_to_care, 1)},
+                    {"feasible": bid.feasible, "eta": round(bid.time_to_care, 1),
+                     "strain": round(bid.post_accept_strain, 2),
+                     "reason": bid.refusal_reason},
                     t,
                 )
             )
@@ -386,6 +418,163 @@ class NearestAvailableStrategy(Strategy):
 # Baseline 4: floor condition
 # --------------------------------------------------------------------------- #
 
+class BatchedOptimalStrategy(Strategy):
+    """The real ceiling: full information *and* a joint solve.
+
+    This is what `central` should always have been. It differs from the greedy
+    centralised arm in the one way that matters: it collects transfer requests
+    for `BATCH_WINDOW` minutes and then assigns the whole batch at once by
+    minimum-cost matching, instead of serving them first-come-first-served.
+
+    Why that is strictly stronger. Two patients need the last ICU bed at the
+    nearest tertiary centre. Greedy gives it to whoever escalated first and
+    sends the second one across the region. The joint solver notices that the
+    second patient is 40 minutes from anywhere else while the first is 12
+    minutes from a second option, and swaps them. No decentralised protocol can
+    do this, because no participant can see both requests.
+
+    It pays for that power twice over, and both costs are modelled:
+      * every hospital surrenders its live private state to one node
+      * every patient waits out the batching window before anything happens
+
+    If MAHROS lands within a declared equivalence margin of *this*, the claim
+    "decentralised negotiation gives up almost nothing" finally means something.
+    """
+
+    name = "BatchedOptimal"
+    requires_central_data = True
+
+    NODE = "ORACLE"
+    #: Collection window. Longer batches assign better and start later; five
+    #: minutes is about the largest delay a transfer service would tolerate.
+    BATCH_WINDOW = 5.0
+
+    def __init__(self, ctx: StrategyContext) -> None:
+        super().__init__(ctx)
+        self.batches = 0
+        self.batch_sizes: list[int] = []
+        #: request_id -> receiver, decided when the batch was solved
+        self._decided: dict[str, str | None] = {}
+
+    def resolve(self, req: TransferRequest, now: float) -> StrategyResult:
+        if req.request_id not in self._decided:
+            self._solve_batch(req, now)
+
+        receiver = self._decided.pop(req.request_id, None)
+        t = now + self.BATCH_WINDOW
+        if receiver is None:
+            return StrategyResult(
+                elapsed_minutes=self.BATCH_WINDOW,
+                coordinator_minutes=0.2,
+                failure_reason="no_capacity_network_wide",
+            )
+
+        hosp = self.ctx.hospitals[receiver]
+        bid = hosp.evaluate(req.public_view(), self.ctx.travel_time(req.origin, receiver), t)
+        if not bid.feasible or not hosp.commit(
+                req, t + self.ctx.cnp.reservation_hold_minutes):
+            # The bed went between planning and committing. Even an oracle races.
+            return StrategyResult(
+                elapsed_minutes=self.BATCH_WINDOW,
+                coordinator_minutes=0.2,
+                failure_reason="no_capacity_network_wide",
+            )
+
+        agreement = Agreement(
+            request_id=req.request_id, origin=req.origin, receiver=receiver,
+            resource=req.resource, specialty=req.specialty,
+            patient_ref=req.patient_ref, agreed_at=t,
+            promised_care_start=t + bid.time_to_care,
+            decided_by="batched_optimal",
+            rationale=(f"Joint optimum over a batch of "
+                       f"{self.batch_sizes[-1] if self.batch_sizes else 1}: {receiver}."),
+        )
+        self.ctx.fairness.record_accept(receiver, req.expected_los_minutes)
+        self.ctx.fairness.record_send(req.origin)
+        return StrategyResult(
+            receiver=receiver, agreement=agreement,
+            elapsed_minutes=self.BATCH_WINDOW, coordinator_minutes=0.2,
+            contacted=len(self.ctx.hospitals) - 1,
+            rationale=agreement.rationale, decided_by="batched_optimal",
+        )
+
+    def _solve_batch(self, trigger: TransferRequest, now: float) -> None:
+        """Collect everything escalating inside the window and assign jointly."""
+        batch = [trigger]
+        sim = getattr(self.ctx, "sim", None)
+        if sim is not None:
+            for payload in sim.queue.peek_until(now + self.BATCH_WINDOW, "negotiate"):
+                other = payload.get("request") if isinstance(payload, dict) else None
+                if (other is not None and other is not trigger
+                        and other.request_id not in self._decided
+                        and other.status not in (RequestStatus.COMPLETED,
+                                                 RequestStatus.IN_TRANSIT,
+                                                 RequestStatus.EXPIRED)):
+                    batch.append(other)
+
+        t = now + self.BATCH_WINDOW
+        peers = [h for h in self.ctx.hospitals]
+
+        # Cost = minutes to definitive care. Infeasible pairings cost infinity
+        # and are never chosen. This is the objective a transfer service would
+        # actually state, and it deliberately contains no fairness term -- the
+        # classical centralised objective is pure efficiency.
+        cost: list[list[float]] = []
+        for req in batch:
+            row = []
+            for hid in peers:
+                if hid == req.origin:
+                    row.append(INF)
+                    continue
+                hosp = self.ctx.hospitals[hid]
+                bid = hosp.evaluate(
+                    req.public_view(), self.ctx.travel_time(req.origin, hid), t)
+                # Same content shape as every other arm, so the leakage
+                # measurement compares like with like.
+                self.ctx.bus.send(Message(
+                    Perf.PROPOSE if bid.feasible else Perf.REFUSE, hid, self.NODE,
+                    req.request_id,
+                    {"feasible": bid.feasible, "eta": round(bid.time_to_care, 1),
+                     "strain": round(bid.post_accept_strain, 2),
+                     "reason": bid.refusal_reason}, t))
+                if not bid.feasible or t + bid.time_to_care > req.expires_at:
+                    row.append(INF)
+                else:
+                    row.append(bid.time_to_care)
+            cost.append(row)
+
+        if len(peers) < len(batch):
+            # More simultaneous requests than hospitals: pad with dummy columns
+            # so the solver stays well-formed. Padded picks mean "unplaced".
+            pad = len(batch) - len(peers)
+            for row in cost:
+                row.extend([INF] * pad)
+            peers = peers + [None] * pad       # type: ignore[list-item]
+
+        assignment = linear_sum_assignment(cost)
+        for i, req in enumerate(batch):
+            col = assignment[i]
+            chosen = None
+            if col >= 0 and col < len(peers) and peers[col] is not None \
+                    and cost[i][col] != INF:
+                chosen = peers[col]
+            self._decided[req.request_id] = chosen
+
+        self.batches += 1
+        self.batch_sizes.append(len(batch))
+        self.ctx.bus.send(Message(
+            Perf.CFP, self.NODE, self.NODE, trigger.request_id,
+            {"batch": len(batch)}, t))
+
+    def stats(self) -> dict[str, Any]:
+        return {
+            "batches_solved": self.batches,
+            "mean_batch_size": round(
+                sum(self.batch_sizes) / len(self.batch_sizes), 2) if self.batch_sizes else 0.0,
+            "max_batch_size": max(self.batch_sizes) if self.batch_sizes else 0,
+        }
+
+
 class NoTransferStrategy(Strategy):
     """No inter-hospital coordination at all: the patient waits where they are."""
 
@@ -407,6 +596,7 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "mahros": MahrosStrategy,
     "phone": PhoneTreeStrategy,
     "central": CentralizedStrategy,
+    "optimal": BatchedOptimalStrategy,
     "nearest": NearestAvailableStrategy,
     "none": NoTransferStrategy,
 }

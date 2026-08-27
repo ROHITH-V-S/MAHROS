@@ -213,6 +213,10 @@ class Agreement:
     origin: str = ""
     receiver: str = ""
     resource: ResourceType = ResourceType.ICU_BED
+    # The clinical service agreed to. On the ledger because it is a *term of
+    # the agreement*, and because a hospital that later claims it cannot treat
+    # this specialty has to be checkable against what it has already accepted.
+    specialty: Specialty = Specialty.GENERAL
     patient_ref: str = ""
     agreed_at: float = 0.0
     promised_care_start: float = 0.0
@@ -227,6 +231,7 @@ class Agreement:
             "origin": self.origin,
             "receiver": self.receiver,
             "resource": self.resource.value,
+            "specialty": self.specialty.value,
             "patient_ref": self.patient_ref,
             "agreed_at": round(self.agreed_at, 4),
             "promised_care_start": round(self.promised_care_start, 4),

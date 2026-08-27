@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from mahros.core.types import Acuity, RequestStatus
+from mahros.eval import holm_adjust, paired_t, tost_equivalence
 from mahros.ledger.interface import HashChainLedger
 from mahros.sim import metrics as M
 from mahros.sim.runner import RunConfig, SimulationRunner
@@ -26,11 +27,16 @@ ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
 
 SCENARIO_ORDER = ["baseline", "surge", "scarcity", "surge_scarcity"]
-STRATEGY_ORDER = ["mahros", "phone", "central", "nearest", "none"]
+#: Largest difference in transfer success rate we are willing to call "the
+#: same". Declared before looking at any result. Two percentage points is below
+#: the seed-to-seed noise a commissioner would see in a single fortnight.
+EQUIVALENCE_MARGIN = 0.02
+STRATEGY_ORDER = ["mahros", "phone", "central", "optimal", "nearest", "none"]
 STRATEGY_LABELS = {
     "mahros": "MAHROS",
     "phone": "Phone tree (today)",
-    "central": "Centralized (omniscient)",
+    "central": "Centralized (greedy, omniscient)",
+    "optimal": "Batched optimal (joint solve)",
     "nearest": "Nearest available",
     "none": "No transfers",
 }
@@ -86,18 +92,33 @@ def main(n_seeds: int = 5) -> None:
             "vs_central": M.compare(base["central"], base["mahros"]),
         }
 
+    # Significance and equivalence testing lives in experiments/significance.py --
+    # it answers a different question (which differences may be *claimed*) and
+    # needs more seeds than a descriptive sweep does.
+
     # -- ablation ---------------------------------------------------------- #
     print("\nablation on surge_scarcity...")
+    # Real ablations only. The old `no_audit` arm was bit-identical to `full`
+    # because the ledger touched no decision -- it was a no-op reported as a
+    # result. Now the ledger is the evidence base for challenging a refusal, so
+    # removing it genuinely changes behaviour, and the arm means something.
     ablation_arms = {
         "full": {},
         "no_fairness": {"fairness_enabled": False},
-        "no_audit": {"audit_enabled": False},
+        "no_argumentation": {"enable_argumentation": False},
+        # With 50% strategic hospitals, so the layers have something to do.
+        "adversarial_full": {"strategic_fraction": 0.5},
+        "adversarial_no_argumentation": {"strategic_fraction": 0.5,
+                                         "enable_argumentation": False},
+        "adversarial_no_audit": {"strategic_fraction": 0.5,
+                                 "audit_enabled": False},
     }
     out["ablation"] = {}
     for label, kw in ablation_arms.items():
         runs = [M.compute(run_one("surge_scarcity", "mahros", s, **kw)) for s in seeds]
         out["ablation"][label] = M.aggregate(runs)
-        print(f"  {label:14s} gini={out['ablation'][label]['burden_gini']:.3f} "
+        print(f"  {label:30s} success={out['ablation'][label]['success_rate']:.1%} "
+              f"gini={out['ablation'][label]['burden_gini']:.3f} "
               f"wait={out['ablation'][label]['mean_wait']:.1f}min")
 
     # -- per-hospital detail from one representative run -------------------- #

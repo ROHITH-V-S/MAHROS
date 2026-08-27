@@ -215,9 +215,9 @@ def doctor():
     table.add_row("web3 (EVM ledger)",
                   "[green]installed[/green]" if probe("web3") else "[yellow]fallback[/yellow]",
                   "hash-chain ledger used if absent")
-    table.add_row("NegMAS (negotiation)",
-                  "[green]installed[/green]" if probe("negmas") else "[yellow]not used[/yellow]",
-                  "built-in Contract Net used by default")
+    table.add_row("scipy (cross-check)",
+                  "[green]installed[/green]" if probe("scipy") else "[yellow]not needed[/yellow]",
+                  "validates mahros.eval against a reference; never required")
 
     provider = os.getenv("MAHROS_LLM_PROVIDER", "none")
     if provider == "none":
@@ -253,6 +253,8 @@ def _print_metrics(m: M.Metrics) -> None:
         ("ledger valid", str(m.ledger_valid), f"{m.ledger_records} agreements recorded"),
         ("privacy violations", str(m.privacy_violations), "identifiers crossing a boundary"),
         ("decentralised", str(m.decentralised), f"max {m.max_peers_disclosed} peers seen by one node"),
+        ("capacity leaked (bits/msg)", f"{m.leaked_bits_per_message:.2f}",
+         f"{m.leakage_fraction_of_maximum:.0%} of a fully transparent system"),
     ]
     for r in rows:
         t.add_row(*r)

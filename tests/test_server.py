@@ -234,7 +234,10 @@ def test_websocket_streams_a_negotiation(client):
             types.append(m["type"])
             if m["type"] == "state":
                 break
-        assert types[0] == "negotiation_start"
+        # `busy` frames bracket the replay so the console can disable its
+        # buttons; the negotiation itself must be the first content frame.
+        content = [t for t in types if t != "busy"]
+        assert content[0] == "negotiation_start"
         assert "step" in types
         assert ("agreement" in types) or ("failed" in types)
 

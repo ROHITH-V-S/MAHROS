@@ -19,6 +19,7 @@ from typing import Any, Iterable
 
 from ..core.types import Acuity, RequestStatus, TransferRequest
 from ..fairness.metrics import equity_report, gini, jain_index
+from ..privacy.leakage import measure_leakage
 from .runner import RunResult
 
 
@@ -75,6 +76,13 @@ class Metrics:
     max_peers_disclosed: int = 0
     decision_concentration: float = 0.0
     disclosure_concentration: float = 0.0
+    # How much a hospital's private occupancy is actually revealed by what it
+    # says, in bits. `disclosure_concentration` only measures who *receives*
+    # capacity messages, which is a topology property; these measure what those
+    # messages give away. See mahros/privacy/leakage.py.
+    leaked_bits_per_transfer: float = 0.0
+    leaked_bits_per_message: float = 0.0
+    leakage_fraction_of_maximum: float = 0.0
 
     # cost
     messages: int = 0
@@ -173,6 +181,13 @@ def compute(result: RunResult) -> Metrics:
         m.messages = result.bus.message_count
         m.messages_per_transfer = result.bus.message_count / len(reqs)
         m.kb_exchanged = result.bus.bytes_exchanged / 1024.0
+
+        # What the messages actually give away, as opposed to who receives them.
+        leak = measure_leakage(result.bus, result.hospitals)
+        m.leaked_bits_per_transfer = leak.total_bits / len(reqs)
+        m.leaked_bits_per_message = leak.mean_bits_per_message
+        m.leakage_fraction_of_maximum = leak.disclosure_fraction
+        m.extra["leakage"] = leak.as_dict()
 
     if result.coordinator is not None:
         cs = result.coordinator.stats()
