@@ -15,3 +15,10 @@ results/*.json
 results/*.html
 results/*.png
 !results/.gitkeep
+
+# ...except the built dashboard, which is deployed rather than rebuilt.
+# It is a single self-contained HTML file with the data embedded, and the
+# sweep that produces it takes ~7 minutes -- far too slow to run in a
+# platform build step. Committing it is what lets Vercel serve the results
+# page and Render serve the /dashboard tab.
+!results/dashboard.html

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "mkdir -p .vercel_out && cp results/dashboard.html .vercel_out/index.html",
+  "outputDirectory": ".vercel_out",
+  "installCommand": "echo 'no install step: the dashboard is a single self-contained HTML file'"
+}

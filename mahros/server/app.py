@@ -121,6 +121,23 @@ def dashboard() -> str:
 # REST
 # --------------------------------------------------------------------------- #
 
+@app.get("/healthz")
+def healthz():
+    """Liveness probe for the hosting platform.
+
+    Deliberately cheap: platform health checks poll continuously, and the
+    obvious alternative -- pointing them at "/" -- would re-read and return
+    53 KB of console HTML every time. This also reports whether the built
+    results dashboard shipped with the deploy, which is the one thing that
+    silently goes missing if results/dashboard.html was not committed.
+    """
+    return {
+        "status": "ok",
+        "hospitals": len(NET.hospitals),
+        "dashboard_built": DASHBOARD.exists(),
+    }
+
+
 @app.get("/api/state")
 def get_state():
     return NET.state()
