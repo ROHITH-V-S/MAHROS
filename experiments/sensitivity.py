@@ -51,7 +51,7 @@ def section(title: str) -> None:
     print(f"\n{'=' * 74}\n{title}\n{'=' * 74}")
 
 
-def main(n_seeds: int = 5) -> int:
+def main(n_seeds: int = 8) -> int:
     t0 = time.perf_counter()
     seeds = [42 + i * 101 for i in range(n_seeds)]
     out: dict = {"meta": {"scenario": SCENARIO, "seeds": seeds}, "sweeps": {}}
@@ -191,4 +191,4 @@ def main(n_seeds: int = 5) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 5))
+    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 8))

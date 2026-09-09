@@ -64,7 +64,7 @@ def series(strategy: str, seeds: list[int], **kw) -> dict[str, list[float]]:
     return out
 
 
-def main(n_seeds: int = 12) -> int:
+def main(n_seeds: int = 40) -> int:
     t0 = time.perf_counter()
     seeds = [42 + i * 101 for i in range(n_seeds)]
     out: dict = {"meta": {"scenario": SCENARIO, "n_seeds": n_seeds, "seeds": seeds,
@@ -161,4 +161,4 @@ def main(n_seeds: int = 12) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 12))
+    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 40))

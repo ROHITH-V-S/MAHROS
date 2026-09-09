@@ -1,6 +1,6 @@
 """The headline experiment: what happens when hospitals are not honest.
 
-    python experiments/adversarial.py            # 8 seeds, ~3 min
+    python experiments/adversarial.py            # 12 seeds, ~5 min
     python experiments/adversarial.py 20         # 20 seeds
 
 Three questions, in the order a reviewer will ask them.
@@ -74,7 +74,7 @@ def _agg(results) -> dict:
     }
 
 
-def main(n_seeds: int = 8) -> int:
+def main(n_seeds: int = 12) -> int:
     t0 = time.perf_counter()
     seeds = [42 + i * 101 for i in range(n_seeds)]
     out: dict = {"meta": {"scenario": SCENARIO, "seeds": seeds,
@@ -161,4 +161,4 @@ def main(n_seeds: int = 8) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 8))
+    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 12))

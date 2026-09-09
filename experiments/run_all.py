@@ -48,7 +48,7 @@ def run_one(scenario: str, strategy: str, seed: int, **kw):
     return SimulationRunner(RunConfig(scenario=sc, strategy=strategy, seed=seed, **kw)).run()
 
 
-def main(n_seeds: int = 5) -> None:
+def main(n_seeds: int = 8) -> None:
     t_start = time.perf_counter()
     seeds = [42 + i * 101 for i in range(n_seeds)]
     out: dict = {
@@ -242,4 +242,4 @@ def main(n_seeds: int = 5) -> None:
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 5)
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 8)
