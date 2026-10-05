@@ -1,7 +1,12 @@
 """The headline experiment: what happens when hospitals are not honest.
 
-    python experiments/adversarial.py            # 12 seeds, ~5 min
-    python experiments/adversarial.py 20         # 20 seeds
+    python experiments/adversarial.py                    # 12 seeds, real network
+    python experiments/adversarial.py 20                 # 20 seeds
+    python experiments/adversarial.py 12 surge_scarcity  # synthetic arm
+
+The default scenario is a network of 27 real Houston hospitals at the occupancy
+they actually reported during the July 2021 Delta peak. The synthetic
+`surge_scarcity` scenario remains available as the ICU-scarcity counterfactual.
 
 Three questions, in the order a reviewer will ask them.
 
@@ -42,7 +47,9 @@ from mahros.sim.scenario import SCENARIOS
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
-SCENARIO = "surge_scarcity"
+#: Default: real facilities, real geography, real observed load. Overridable on
+#: the command line so the synthetic counterfactual stays one argument away.
+SCENARIO = "houston_surge"
 
 FRACTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 SHIRK_THRESHOLDS = [0.30, 0.55, 0.80]   # how readily a strategic hospital lies
@@ -161,4 +168,6 @@ def main(n_seeds: int = 12) -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2:
+        SCENARIO = sys.argv[2]
     raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 12))

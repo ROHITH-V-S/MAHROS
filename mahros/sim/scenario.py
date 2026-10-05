@@ -1,7 +1,20 @@
-"""Synthetic hospital-network generator.
+"""Hospital-network generation: synthetic, and real.
 
-Everything here is a documented modelling assumption, not a claim about a real
-health system. Parameters are collected in one place so `docs/MODEL_ASSUMPTIONS.md`
+Two substrates live here.
+
+**Real networks** (`real_metro` set on a scenario) are built from
+`mahros.sim.real_network`: every hospital is a real, named, CMS-certified
+facility at its real coordinates, with the bed and ICU counts it reported to
+HHS and the occupancy it actually ran at in a given week. All headline results
+use these.
+
+**Synthetic networks** (the default) are generated from three tier templates.
+They remain because they are fast, offline and deterministic, which is what unit
+tests need, and because the ICU-scarcity counterfactual is a deliberate
+departure from any observed network.
+
+Everything in the synthetic path is a documented modelling assumption, not a
+claim about a real health system. Parameters are collected in one place so `docs/MODEL_ASSUMPTIONS.md`
 can cite them and a reviewer can check them. Distributions are seeded, so every
 run is reproducible from `(scenario_name, seed)`.
 
@@ -23,7 +36,8 @@ from ..core.types import (
     ResourceType,
     Specialty,
 )
-from ..hospital.hospital import HospitalConfig
+from ..hospital.hospital import HospitalConfig  # noqa: F401  (also used in annotations)
+from ..calibration.routing import HANDOVER_MINUTES, road_travel_minutes
 
 
 @dataclass
@@ -49,6 +63,26 @@ class ScenarioConfig:
     uninsured_fraction: float = 0.40
     # capacity scaling: <1 tightens the whole network (India ICU scarcity study)
     capacity_scale: float = 1.0
+
+    # -- real-network substrate -------------------------------------------- #
+    #: When set, the network is built from vendored real facility records
+    #: instead of the tier templates below, and `n_hospitals`, `region_km` and
+    #: the tier mix are ignored -- the real network decides them.
+    real_metro: str | None = None
+    #: Which reported week to instantiate the real network from. Bed counts,
+    #: ICU counts and occupancy are all taken from this week, so the choice of
+    #: week *is* the choice of scenario: a calm week and a surge week are the
+    #: same hospitals under the load they really carried.
+    real_week: str | None = None
+    #: Multiplier on the length-of-stay distribution. Real networks scale this
+    #: so the mean stay matches US acute ALOS (~4.6 days) rather than the
+    #: simulator's native ~2.1 days; see real_network.LOS_SCALE for why that
+    #: matters. Synthetic scenarios keep 1.0 and are bit-identical to before.
+    los_scale: float = 1.0
+
+    @property
+    def is_real(self) -> bool:
+        return self.real_metro is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -91,6 +125,23 @@ _TIER_MIX = [1, 1, 1, 1, 2, 1, 2, 3, 1, 2, 1, 3, 1, 2, 1, 3, 1, 1, 2, 3]
 
 
 def build_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
+    """Build the hospital network for a scenario.
+
+    Dispatches to the real-facility builder when the scenario names a metro, so
+    that every caller -- the runner, the live console, the experiments -- gets
+    real hospitals without knowing anything about how they are loaded.
+    """
+    if cfg.is_real:
+        from .real_network import build_real_network
+        return build_real_network(
+            metro=cfg.real_metro,
+            week=cfg.real_week,
+            capacity_scale=cfg.capacity_scale,
+        ).configs
+    return _build_synthetic_network(cfg)
+
+
+def _build_synthetic_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
     rng = random.Random(cfg.seed)
     configs: list[HospitalConfig] = []
 
@@ -130,21 +181,37 @@ def build_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
 
 
 def travel_time_matrix(
-    configs: list[HospitalConfig], speed_kmh: float
+    configs: list[HospitalConfig],
+    speed_kmh: float,
+    metro: str | None = None,
 ) -> dict[tuple[str, str], float]:
-    """Euclidean distance -> minutes, with a fixed load/handover overhead.
+    """Inter-hospital travel time in minutes.
 
-    The 12-minute constant covers packaging the patient, crew handover at both
-    ends, and is why very short hops are not free.
+    Travel time is the most decision-relevant number in the model: a bid that
+    cannot deliver the patient inside the clinical safe window is discarded
+    before scoring rather than traded off, so this decides which hospitals are
+    even eligible.
+
+    When `metro` names a real network with a vendored OSRM matrix, real routed
+    road times are used. Otherwise -- synthetic networks, or a real network
+    whose routes have not been fetched -- it falls back to straight-line
+    distance at `speed_kmh` plus a fixed handover overhead. Any pair the router
+    could not reach falls back individually.
     """
+    road = road_travel_minutes(metro) if metro else None
+
     out: dict[tuple[str, str], float] = {}
     for a in configs:
         for b in configs:
+            key = (a.hospital_id, b.hospital_id)
             if a.hospital_id == b.hospital_id:
-                out[(a.hospital_id, b.hospital_id)] = 0.0
+                out[key] = 0.0
+                continue
+            if road is not None and key in road:
+                out[key] = road[key]
                 continue
             d = math.hypot(a.x - b.x, a.y - b.y)
-            out[(a.hospital_id, b.hospital_id)] = 12.0 + (d / speed_kmh) * 60.0
+            out[key] = HANDOVER_MINUTES + (d / speed_kmh) * 60.0
     return out
 
 
@@ -215,7 +282,7 @@ class PatientGenerator:
         )[0]
         acuity = Acuity(self.rng.randint(lo, hi))
         los = max(60.0, self.rng.lognormvariate(math.log(mean_los), 0.45))
-        return resource, specialty, acuity, los
+        return resource, specialty, acuity, los * self.cfg.los_scale
 
     #: initial admission mix -> (resource, weight, mean LOS minutes)
     _ADMISSION_MIX = [
@@ -224,19 +291,34 @@ class PatientGenerator:
         (ResourceType.ICU_BED,  0.025, 2400.0),   # ~40 h
     ]
 
-    def initial_admission(self) -> tuple[ResourceType, float]:
-        """Most admissions start on a ward bed and stay a couple of days.
+    def initial_admission(
+        self, hospital: "HospitalConfig | None" = None
+    ) -> tuple[ResourceType, float]:
+        """Draw where a new admission lands and how long it stays.
 
-        Critical-care beds are kept lightly loaded *at admission* on purpose:
-        the escalation stream is what fills them, and if routine admissions
-        already saturated the ICU there would be no transfer problem to study,
-        only a capacity problem.
+        With no hospital given, uses the scenario-wide mix: most admissions
+        start on a ward bed and stay a couple of days, and critical-care beds
+        are left lightly loaded at admission on purpose, so that the escalation
+        stream is what fills them.
+
+        Real networks pass the hospital, which carries a mix fitted to its own
+        observed bed composition. That matters: validating against reported
+        occupancy showed the global mix systematically starving the ICU and
+        overflowing the ward at ICU-heavy facilities.
         """
-        resource, _, mean_los = self.rng.choices(
-            self._ADMISSION_MIX, weights=[w for _, w, _ in self._ADMISSION_MIX], k=1
-        )[0]
+        mix = (hospital.admission_mix if hospital is not None
+               and hospital.admission_mix else None)
+        if mix:
+            resources = list(mix)
+            weights = [mix[r][0] for r in resources]
+            resource = self.rng.choices(resources, weights=weights, k=1)[0]
+            mean_los = mix[resource][1]
+        else:
+            resource, _, mean_los = self.rng.choices(
+                self._ADMISSION_MIX,
+                weights=[w for _, w, _ in self._ADMISSION_MIX], k=1)[0]
         los = max(120.0, self.rng.lognormvariate(math.log(mean_los), 0.6))
-        return resource, los
+        return resource, los * self.cfg.los_scale
 
     def arrival_gap(self, rate_per_hour: float, t_minutes: float) -> float:
         """Exponential inter-arrival with a diurnal curve and optional surge."""
@@ -296,3 +378,59 @@ SCENARIOS: dict[str, ScenarioConfig] = {
         name="smoke", n_hospitals=6, horizon_hours=24 * 2, region_km=25.0,
     ),
 }
+
+
+# --------------------------------------------------------------------------- #
+# Real networks -- the substrate for every headline result
+# --------------------------------------------------------------------------- #
+
+# Weeks are not chosen for narrative convenience. Every one below was picked
+# from the 216 reported weeks by network-wide observed occupancy, restricted to
+# weeks where at least 26 of the 27 facilities reported bed counts and at least
+# 22 reported ICU, so that the load is measured rather than inferred. The
+# spread they cover -- 0.75 to 0.96 inpatient occupancy -- is what this network
+# really did, and it is materially tighter than the 0.70 the synthetic
+# scenarios were tuned to.
+#
+# Note in particular that the busiest weeks are *not* the COVID waves. Houston
+# ran fuller in late 2023 than it did in January 2021.
+
+def _real(name: str, week: str, horizon_days: float = 14,
+          capacity_scale: float = 1.0, metro: str = "houston",
+          escalation_prob: float = 0.18) -> ScenarioConfig:
+    from .real_network import LOS_SCALE
+    return ScenarioConfig(
+        name=name, real_metro=metro, real_week=week,
+        horizon_hours=24 * horizon_days, los_scale=LOS_SCALE,
+        capacity_scale=capacity_scale, escalation_prob=escalation_prob,
+        # Real coordinates set the geography; region_km is unused but kept
+        # truthful for anything that reports it.
+        region_km=40.0,
+    )
+
+
+REAL_SCENARIOS: dict[str, ScenarioConfig] = {
+    # Calmest fully-reported week in the series. 0.749 inpatient / 0.818 ICU.
+    "houston_calm": _real("houston_calm", "2020-08-23"),
+    # The reference week the facility selection and the existing HHS summary
+    # calibration both use. 0.823 inpatient / 0.886 ICU.
+    "houston_baseline": _real("houston_baseline", "2021-01-10"),
+    # Median week across the whole series. 0.907 inpatient / 0.883 ICU.
+    "houston_typical": _real("houston_typical", "2022-05-08"),
+    # Delta wave peak, full reporting from all 27 facilities.
+    # 0.951 inpatient / 0.951 ICU. This is the stress case.
+    "houston_surge": _real("houston_surge", "2021-07-25"),
+    # Post-pandemic capacity crisis: busier than any COVID week.
+    # 0.955 inpatient / 0.921 ICU.
+    "houston_post_pandemic": _real("houston_post_pandemic", "2023-12-10"),
+    # The ICU-scarcity counterfactual, now run on real topology rather than an
+    # invented one: real hospitals, real geography, capacity tightened to the
+    # critical-care-scarce regime the India scenarios target. Declared as a
+    # counterfactual, not as an observation of anywhere.
+    "houston_icu_scarce": _real("houston_icu_scarce", "2021-07-25",
+                                capacity_scale=0.72),
+    # Fast real-network smoke test.
+    "houston_smoke": _real("houston_smoke", "2021-01-10", horizon_days=2),
+}
+
+SCENARIOS.update(REAL_SCENARIOS)

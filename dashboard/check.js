@@ -209,7 +209,11 @@ else ok("peer payload exposes no identifying field");
 
 // Numbers on the page must match the data, not be stale copy.
 const heroText = doc.querySelector("#hero-tiles").textContent;
-const expectedSuccess = (DATA.results.surge_scarcity.mahros.success_rate * 100).toFixed(0) + "%";
+// Headline scenario is whatever the data was built with, not a hardcoded
+// name -- the real-network rebuild renamed every scenario.
+const HEADLINE = (DATA.meta.scenarios || []).includes("houston_surge")
+  ? "houston_surge" : (DATA.meta.scenarios || ["baseline"])[0];
+const expectedSuccess = (DATA.results[HEADLINE].mahros.success_rate * 100).toFixed(0) + "%";
 if (heroText.includes(expectedSuccess)) ok(`hero success rate matches data (${expectedSuccess})`);
 else bad(`hero does not show the data's success rate (${expectedSuccess})`);
 

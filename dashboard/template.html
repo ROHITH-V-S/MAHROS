@@ -580,17 +580,33 @@ const SERIES = {
 const colourOf = (s) => css(SERIES[s] ? SERIES[s].key : "--s-neutral");
 
 const SCENARIO_LABELS = {
-  baseline: "Baseline",
-  surge: "Demand surge",
-  scarcity: "Capacity scarcity",
-  surge_scarcity: "Surge + scarcity",
+  houston_calm: "Calm week",
+  houston_baseline: "Reference week",
+  houston_typical: "Median week",
+  houston_surge: "Delta peak",
+  houston_post_pandemic: "Post-pandemic",
+  // retained so a --synthetic run still renders
+  baseline: "Baseline (synthetic)",
+  surge: "Demand surge (synthetic)",
+  scarcity: "Capacity scarcity (synthetic)",
+  surge_scarcity: "Surge + scarcity (synthetic)",
 };
 const SCENARIO_BLURB = {
-  baseline: "A network running at roughly 70% occupancy with no external shock.",
-  surge: "An epidemic/festival-style demand spike on an otherwise intact network.",
-  scarcity: "India-style critical-care scarcity: same demand, materially fewer beds.",
-  surge_scarcity: "The stress case: a scarce network hit by a demand spike.",
+  houston_calm: "2020-08-23 — the calmest fully-reported week these 27 real hospitals had. 74.9% occupancy.",
+  houston_baseline: "2021-01-10 — the reference week the network is sized from. 82.3% occupancy.",
+  houston_typical: "2022-05-08 — the median week across the whole series. 90.7% occupancy.",
+  houston_surge: "2021-07-25 — the Delta peak, all 27 facilities reporting. 95.1% occupancy.",
+  houston_post_pandemic: "2023-12-10 — busier than any COVID week. 95.5% occupancy.",
+  baseline: "Synthetic network at roughly 70% occupancy with no external shock.",
+  surge: "Synthetic: an epidemic-style demand spike on an intact network.",
+  scarcity: "Synthetic: critical-care scarcity, same demand, fewer beds.",
+  surge_scarcity: "Synthetic stress case: a scarce network hit by a demand spike.",
 };
+
+// The scenario the headline panels summarise. Read from the data rather than
+// hardcoded, so a --synthetic rebuild does not render a blank dashboard.
+const HEADLINE = (DATA.meta.scenarios || []).includes("houston_surge")
+  ? "houston_surge" : (DATA.meta.scenarios || ["baseline"])[0];
 
 const METRICS = {
   success_rate: {
@@ -642,12 +658,12 @@ function showTip(e, html) {
 const hideTip = () => { tip.style.opacity = "0"; };
 
 /* ---------------------------------------------------------------- state */
-let scenario = "surge_scarcity";
+let scenario = HEADLINE;
 let metric = "success_rate";
 
 /* ================================================== hero tiles */
 function renderHero() {
-  const ss = DATA.results.surge_scarcity;
+  const ss = DATA.results[HEADLINE];
   const m = ss.mahros, p = ss.phone, c = ss.central;
   const tiles = [
     {
@@ -683,8 +699,8 @@ function renderHero() {
     host.append(n);
   });
   $("#hero-note").innerHTML =
-    `Headline figures from the <b>surge&nbsp;+&nbsp;scarcity</b> scenario &mdash; a capacity-constrained network under a demand spike &mdash; averaged over ${DATA.meta.n_seeds} seeds ` +
-    `(${DATA.results.surge_scarcity.mahros.n_requests_total} transfer requests in total). Every other scenario is in the table below.`;
+    `Headline figures from <b>${SCENARIO_LABELS[HEADLINE] || HEADLINE}</b> &mdash; ${SCENARIO_BLURB[HEADLINE] || ""} Averaged over ${DATA.meta.n_seeds} seeds ` +
+    `(${DATA.results[HEADLINE].mahros.n_requests_total} transfer requests in total). Every other scenario is in the table below.`;
   $("#seed-count").textContent = DATA.meta.n_seeds;
   $("#pill-seeds").textContent = DATA.meta.n_seeds + " seeds/arm";
   $("#footer-meta").textContent =
@@ -1191,7 +1207,7 @@ function renderLayers() {
 
 /* ================================================== honest notes */
 function renderNotes() {
-  const ss = DATA.results.surge_scarcity;
+  const ss = DATA.results[HEADLINE];
   const notes = [
     ["strength", "Calibrated",
       `The simulation produces transfer requests at roughly 3–4% of all admissions, which lands on the ~3.5% of US hospital admissions that are interhospital transfers. That ratio was not tuned to match — it fell out of the escalation model, and it is the main external check available.`],

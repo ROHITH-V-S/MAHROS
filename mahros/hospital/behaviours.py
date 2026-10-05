@@ -90,10 +90,33 @@ class BiddingPolicy:
         convenience -- it is what "defensible" means. A hospital asked to
         justify a refusal must show its own state supports it, and a fabricated
         refusal has no such state to show.
+
+        **This is an optimistic assumption and it should be named as one.** It
+        says a lying hospital simply cannot mount a defence, when in reality it
+        could just repeat the lie. The attested variant below removes the
+        assumption rather than relying on it.
         """
         if reported.misreported:
             return False
         return not reported.truthful.feasible
+
+    def will_attest(
+        self,
+        reported: ReportedAssessment,
+        rng: random.Random,
+        deterrence: float = 1.0,
+    ) -> bool:
+        """Will this hospital put a co-signed, non-repudiable signature on it?
+
+        This replaces the free win `defend` grants the mechanism. Instead of
+        assuming a liar cannot defend, the attested protocol asks whether a liar
+        will *sign* -- an institutional question with an explicit, swept answer,
+        rather than an assumption buried in the simulator.
+
+        An honest hospital always signs: the claim is true, so signing costs it
+        nothing.
+        """
+        return True
 
 
 class HonestPolicy(BiddingPolicy):
@@ -139,6 +162,36 @@ class StrategicPolicy(BiddingPolicy):
         self.comfort_threshold = comfort_threshold
         #: A stay longer than this makes a patient "expensive" to accept.
         self.expensive_los = expensive_los
+
+    def will_attest(
+        self,
+        reported: ReportedAssessment,
+        rng: random.Random,
+        deterrence: float = 1.0,
+    ) -> bool:
+        """Will a hospital that just lied also *sign* the lie?
+
+        This is the question the unattested protocol quietly assumed away. An
+        honest refusal is signed without hesitation. A fabricated one is a
+        different proposition: putting a co-signed, non-repudiable statement
+        behind it converts a deniable phone-call excuse into durable,
+        attributable evidence that the hospital's own later acceptances may
+        falsify.
+
+        `deterrence` is the probability it declines rather than signs falsely,
+        and it is a **declared assumption about institutional behaviour** -- not
+        something any dataset measures. It is swept end to end in
+        `experiments/attestation.py`, including the pessimistic extreme where
+        signing deters nobody.
+
+        The two failure directions are both interesting and both reported:
+        at high deterrence the mechanism prevents the refusal; at low deterrence
+        it fails to prevent but manufactures the signed evidence that makes the
+        refusal enforceable after the fact.
+        """
+        if not reported.misreported:
+            return True                      # true claim, no reason not to sign
+        return rng.random() >= deterrence
 
     def _wants_out(self, truth: "AgentAssessment", req: TransferRequest) -> bool:
         if not truth.feasible:
@@ -227,6 +280,62 @@ POLICIES: dict[str, type[BiddingPolicy]] = {
 }
 
 
+class ColludingPolicy(StrategicPolicy):
+    """A strategic hospital that coordinates its refusals with a cartel.
+
+    It lies for the same reasons a `StrategicPolicy` does. The difference is
+    what it does when it would rather *accept*: if taking this patient would
+    contradict a refusal another cartel member made recently, it refuses
+    instead, keeping the shared story clean.
+
+    That is the whole attack. The ledger challenge needs one hospital to refuse
+    a resource and then accept it; a cartel that abstains in concert never
+    produces that pair, so its refusals are individually unimpeachable however
+    dishonest they are.
+
+    The abstention is a real cost, not a free win: the cartel gives up patients
+    it wanted and had room for. `Cartel.abstentions` counts them.
+    """
+
+    name = "colluding"
+    can_lie = True
+
+    def __init__(self, cartel, **kw) -> None:
+        super().__init__(**kw)
+        self.cartel = cartel
+
+    def report(self, truth, req, hospital, now, rng):
+        resource = req.resource.value
+
+        # Ordinary strategic behaviour first.
+        out = super().report(truth, req, hospital, now, rng)
+        if out.misreported or not out.reported.feasible:
+            self.cartel.note_refusal(resource, now)
+            return out
+
+        # It would have accepted. Would accepting expose a partner?
+        if self.cartel.must_abstain(resource, now):
+            self.cartel.note_abstention()
+            self.cartel.note_refusal(resource, now)
+            refused = ReportedAssessment(
+                reported=_refused_like(truth, "at_self_protection_reserve"),
+                truthful=truth,
+                misreported=True,
+                fabricated_reason="at_self_protection_reserve",
+            )
+            return refused
+        return out
+
+
+def _refused_like(truth, reason: str):
+    """A copy of an assessment turned into a refusal with `reason`."""
+    import copy as _copy
+    fake = _copy.copy(truth)
+    fake.feasible = False
+    fake.refusal_reason = reason
+    return fake
+
+
 def assign_policies(
     hospital_ids: list[str],
     strategic_fraction: float = 0.0,
@@ -235,6 +344,8 @@ def assign_policies(
     comfort_threshold: float = StrategicPolicy.DEFAULT_COMFORT_THRESHOLD,
     seed: int = 0,
     incentive_rank: dict[str, float] | None = None,
+    collusion_size: int = 0,
+    cartel=None,
 ) -> dict[str, BiddingPolicy]:
     """Deterministically assign behaviour policies across the network.
 
@@ -259,13 +370,22 @@ def assign_policies(
     rank = incentive_rank or {}
     ordered = sorted(ids, key=lambda h: (-rank.get(h, 0.0), jitter[h]))
 
+    # The cartel forms among the hospitals with the most to gain, which is the
+    # same ordering strategic behaviour uses: the tertiary centres everyone asks
+    # for everything. A cartel of small hospitals nobody calls would be
+    # harmless, and modelling one would understate the risk.
+    colluders = ordered[:collusion_size] if collusion_size else []
+
     n_strategic = int(round(len(ids) * max(0.0, min(1.0, strategic_fraction))))
     n_defensive = int(round(len(ids) * max(0.0, min(1.0, defensive_fraction))))
     n_defensive = min(n_defensive, len(ids) - n_strategic)
 
     out: dict[str, BiddingPolicy] = {}
     for i, hid in enumerate(ordered):
-        if i < n_strategic:
+        if hid in colluders and cartel is not None:
+            out[hid] = ColludingPolicy(cartel, shirk_prob=shirk_prob,
+                                       comfort_threshold=comfort_threshold)
+        elif i < n_strategic:
             out[hid] = StrategicPolicy(shirk_prob=shirk_prob,
                                        comfort_threshold=comfort_threshold)
         elif i < n_strategic + n_defensive:

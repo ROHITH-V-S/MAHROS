@@ -85,18 +85,28 @@ Run `python experiments/adversarial.py` and `python experiments/run_all.py 5`.
 
 | Hospitals that fabricate refusals | Without challenge | With challenge | Recovered |
 |---|---|---|---|
-| 0% (everyone honest) | 86.9% | 86.0% | — (costs ~1 pt) |
-| 25% | 71.7% | 76.5% | 32% of the loss |
-| 50% | 62.4% | 71.2% | 36% of the loss |
-| 75% | 57.0% | 69.1% | 40% of the loss |
-| 100% | 47.0% | 65.0% | 45% of the loss |
+| 0% (everyone honest) | 95.3% | 94.2% | — (costs ~1 pt) |
+| 25% | 85.1% | **90.5%** | 53% of the loss |
+| 50% | 65.5% | **83.9%** | 62% of the loss |
+| 75% | 48.7% | **78.1%** | 63% of the loss |
+| 100% | 32.9% | **74.6%** | 67% of the loss |
 
-*(transfer success rate, surge + scarcity scenario, 6 seeds)*
+*(transfer success rate, 27 real Houston hospitals at the July 2021 Delta-peak
+occupancy they actually reported, with capability read from the CMS
+certification record. 6 seeds.)*
 
-**Say it like this:** "If a quarter of hospitals start protecting their beds by
-claiming they have none, the network's success rate falls from 87% to 72%.
-Turning on the challenge mechanism recovers about a third of that. It does not
-fix the problem completely, and we say so."
+**Say it like this:** "If half the hospitals start protecting their beds by
+claiming they have none, the network's success rate falls from 95% to 66%.
+Turning on the challenge mechanism recovers about two thirds of that. It does
+not fix the problem completely, and we say so."
+
+**If someone remembers older numbers, the honest answer is that they moved
+twice, and both times because the data got better.** The synthetic network
+recovered 32-45%. With real hospitals but capability guessed from size it looked
+like 73-79%. With capability read from the CMS record it settles at 53-67%. The
+middle figure was flattered by an assumption: guessing capability from hospital
+size concentrated cardiac, neuro and trauma in six large hospitals, which made
+every fabricated refusal more damaging than it really is.
 
 ### The safety result — arguably the most important
 
@@ -107,101 +117,270 @@ a bigger reserve than the norm. It refuses more often than average and every
 refusal is genuine. It was **never once overruled**. That matters because a
 mechanism that punished caution instead of deceit would be worse than useless.
 
+The number that makes this land: in the mixed condition the system raised
+**9,100 challenges and overruled 562 refusals — and got none of them wrong.**
+Across every condition, between 4,678 and 10,706 challenges, false accusations
+stayed at exactly zero.
+
 ### Against today's practice
 
-MAHROS beats the phone tree by **18.2 percentage points** (p < 0.0001, and the
-only comparison that survives correction for multiple testing), using **1.1
-minutes of coordinator time per transfer instead of 47**. We stress-tested this: even giving the phone tree its
-best possible case (perfect information, 5-minute calls), it still only reaches
-79.5%. The advantage comes from asking everyone at once, not from any assumption
-we chose.
+MAHROS beats the phone tree by **18.2 percentage points** (p < 0.0001,
+dz = 12.09, 12 paired seeds), using **0.9 minutes of coordinator time per
+transfer instead of 57.5**.
+
+The gap holds in every real week, and widens as the hospitals fill up:
+
+| Real week | How full they were | MAHROS | Phone tree |
+|---|---|---|---|
+| Aug 2020 (calmest) | 75% | 97.4% | 86.9% |
+| Jan 2021 (COVID winter) | 82% | 97.3% | 83.3% |
+| May 2022 (median week) | 91% | 94.6% | 76.3% |
+| Jul 2021 (Delta peak) | 95% | 94.1% | 76.6% |
+| Dec 2023 (post-pandemic) | 96% | 94.7% | 76.0% |
+
+That widening is the bit to point at: **+10.5 points when the network has slack,
++18.7 when it has none.** Coordination matters least when it is easy.
+
+We stress-tested this: even giving the phone tree its best possible case
+(perfect information, short calls) it still loses. The advantage comes from
+asking everyone at once, not from any assumption we chose.
+
+**One honest caveat to volunteer.** A simple shared registry with greedy
+first-fit (`nearest`) does about as well as MAHROS when everyone is honest
+(+0.68 pts, not significant). The case for MAHROS is not that it beats other
+*coordinated* systems on a good day — it is what happens when hospitals lie.
+Point at the table above this one.
 
 ### Why decentralised barely loses anything — the explanation
 
 This one earns respect, because it explains a null result instead of hiding it.
 
-A centralised optimiser that sees everything and solves several transfers
-together should beat us. It does not: across **30 paired seeds** the difference is
-+0.31 points (p = 0.67), and against a fully joint (Hungarian) optimiser it is
-+1.05 points (p = 0.16). Neither is detectable.
+This is the question where you must give both halves of the answer, because
+there are two and they point different ways.
 
-And we found out **why**: transfer requests almost never collide. Even batching
-for a full hour, the average batch holds 1.2 patients. There is almost nothing
-for joint optimisation to optimise, while its costs — pooling everyone's data,
-and delaying every patient by the batching window — are paid every single time.
+> "The omniscient centralised optimiser is better than us — by one percentage
+> point, and that difference is statistically real (p = 0.0091). It is *also*
+> statistically equivalent to us within the two-point margin we declared before
+> looking at the data (TOST p = 0.0023). Both are true. What we claim is the
+> narrow version: **giving up the central data monopoly costs about one point of
+> transfer success, and that is less than the margin we called practically
+> meaningful in advance.**"
 
-**And we can now say the strong version.** "We found no difference" is not the
-same as "we proved they are the same" — the proper test for the latter is TOST,
-and at 30 seeds it **passes**:
+Say it that way round. Reporting only the equivalence would be picking the
+flattering half of a two-sided result, and a good reviewer will find the other
+half.
 
-> "We ran a formal equivalence test — two one-sided tests, against a two
-> percentage point margin we declared before looking at the data. MAHROS is
-> statistically equivalent to the centralised optimiser, p = 0.013. That's a
-> positive claim, not just a failure to find a difference."
+Equivalence to the **batched joint optimiser** is also established now
+(TOST p = 0.0029), which it was not on the synthetic network.
 
-**One honest qualification, and volunteer it.** Against the *fully joint*
-optimiser — the one that batches transfers and solves them together — equivalence
-is not established (p = 0.10). No difference is detectable there either, and the
-point estimate actually favours MAHROS, but the interval is a fraction too wide
-to close the claim. Say that before you're asked; it costs you nothing and it
-shows you know the difference between the two statements.
+If asked why a *decentralised* system holds up at all against one that sees
+everything: escalation requests almost never collide, so joint optimisation
+rarely gets to use the power it pays for, while its costs — pooling everyone's
+data, and delaying every patient by a batching window — are paid every time.
 
 ### The honest negatives — say these before you are asked
 
-- **The fairness layer works, but it took 30 seeds to show it.** It improves
-  load balance by 0.073 Gini (p < 0.0001) at **no measurable cost** in success
-  rate or waiting time. Worth being straight about the history: at 12 seeds this
-  was p = 0.13 and we reported it as a null result. It was under-powered, not
-  absent. If asked why it works only in the deliberation phase: three quarters of
-  transfers are critical patients, and for those we deliberately switch fairness
-  almost off in the scoring, because equity must not cost a critically ill
-  patient minutes. So a hospital over its share instead *asks not to be picked* —
-  and only for a non-critical patient, and only when someone equally close can
-  take them.
-- **The deliberation phase costs about 0.9 points of success on a fully honest
-  network**, because it adds a round trip. It is insurance, and insurance has a
-  premium.
-- **Everything is simulated.** No real patients, no clinical validation.
-- **We only detect a minority of individual lies.** The success-rate recovery is
-  much larger than the per-lie detection rate, because catching a hospital once
-  puts it back in the running for many later patients.
+- **The fairness layer improves balance but is no longer free.** It improves
+  load balance by 0.030 Gini (p = 0.0057), and now carries a **marginal
+  success-rate cost** of 0.59 points (p = 0.061). That is just outside
+  significance and we report it as such rather than rounding it to "no cost".
+  If asked why fairness only acts in the deliberation phase: most transfers are
+  critical patients, and for those we deliberately switch fairness almost off in
+  the scoring, because equity must not cost a critically ill patient minutes. So
+  a hospital over its share instead *asks not to be picked* — and only for a
+  non-critical patient, and only when someone equally close can take them.
+- **The deliberation phase costs a detectable 0.64 points on a fully honest
+  network** (p = 0.040) and **1.44 minutes** of mean time to care (p = 0.018).
+  On the synthetic network the success cost was not detectable; with real data
+  it is. It is insurance, and the premium is real.
+- **The centralised optimiser is genuinely, if slightly, better** — by 1.0
+  point (p = 0.0091), while still being statistically equivalent within our
+  declared two-point margin.
+- **A plain shared registry does about as well when everyone is honest.**
+  Greedy first-fit against a shared bed registry is within 0.27 points of MAHROS
+  (not significant). Our case rests entirely on what happens when hospitals lie.
+- **Coordinated collusion still costs 12.6 points** and cannot be detected from
+  the public record at all. Only proactive spot checks recover it.
+- **The hospitals are real; the behaviour is not.** Real facilities, real beds,
+  real geography, real occupancy, real capability — but no dataset records
+  whether a hospital refused a transfer or whether it refused honestly, so the
+  dishonesty model is ours. No real patients, no clinical validation.
+- **We only detect a minority of individual lies.** At 50% strategic, 19,144
+  fabricated refusals become 8,559 with deliberation on and 353 are formally
+  overruled. The success-rate recovery is far larger than the per-lie detection
+  rate, because catching a hospital once puts it back in the running for many
+  later patients.
 
 ### Two more results worth having ready
 
 **The audit ledger is doing real work.** Under attack, removing it drops the
-network from 69.6% to 61.0% — because with no shared record there is no evidence,
-so every challenge fails. In the previous version of this project that ablation
-did literally nothing, and we say so.
+network from 83.7% to 66.1% — a **17.6 point** fall, because with no shared
+record there is no evidence and every challenge fails. Removing the ledger costs
+exactly as much as removing argumentation altogether, which is the cleanest
+statement of the design: *the argument is only as good as the evidence behind
+it.* In the previous version of this project that ablation did literally
+nothing, and we say so.
 
-**Privacy is measured in bits, not adjectives.** Each MAHROS message narrows an
-observer's belief about the sender's free beds by 2.04 bits — 57.8% of what a
-fully transparent system would give away. A centralised optimiser gives 2.83 bits
-per message, 87.3%. The honest other half: MAHROS asks more hospitals, so *in
-total per transfer* it discloses more than a phone tree does (15.8 bits vs 1.9).
-We report both halves.
+**Decision-making really is decentralised, and it is measurable.** MAHROS's
+decision concentration is **0.086** — no single node decides. Both centralised
+arms score exactly **1.000** by construction. The honest other half: MAHROS
+sends more messages per transfer (38 vs 13 for a phone tree), because it asks
+everyone at once. The saving is in scarce human coordinator time — **0.9
+minutes per transfer against 57.5** — not in bytes.
 
 ## 6. Why anyone should believe the simulation
 
-We checked the model against **3,186 real hospitals** — the US federal
-facility-level capacity dataset (HHS/CDC, public domain).
+**The hospitals are real.** This is the first thing to say, and say it plainly.
 
-| What we assumed | What real hospitals show | |
+> Every result runs on 27 real hospitals in Houston. Memorial Hermann Texas
+> Medical Center. Houston Methodist. MD Anderson. Each one has the bed count,
+> the staffed ICU count, the GPS coordinates and the week-by-week occupancy it
+> reported to the US federal government. We did not invent a network and check
+> it against statistics — we built the network *out of* the data.
+
+Source: *COVID-19 Reported Patient Impact and Hospital Capacity by Facility*
+(US HHS / CDC NHSN). Public domain, facility-level, **no patient data**.
+8,176 real inpatient beds, 1,029 real staffed adult ICU beds, 216 weeks of
+history per hospital.
+
+### The validation, which could have failed
+
+We gave the simulator each hospital's real beds and real load, ran it, and
+compared the occupancy it produced against the occupancy that hospital actually
+reported — facility by facility.
+
+| | Error vs reported occupancy | R² |
 |---|---|---|
-| Network runs near 70% occupancy | **70.0%** mean | matches |
-| ICU runs hotter than the ward | ICU 80.3% vs ward 70.0% | matches |
-| ICU beds per inpatient bed rises with hospital size | 0.108 → 0.118 → 0.127 | matches |
-| Small hospitals often cannot escalate at all | 27.6% have **no** ICU beds | confirms the premise |
+| First attempt | 11.5 points | 0.33 |
+| After fixing the admission mix | 7.4 points | 0.82 |
+| After correcting for blocking | **4.2 points** | **0.94** |
 
-Run `python experiments/calibrate.py` and it prints this table.
+**Say it like this:** "The first version failed. The error per hospital lined up
+almost perfectly with how ICU-heavy that hospital was — we were sending 90% of
+admissions to ward beds everywhere, which floods the ward and starves the ICU at
+a hospital where half the beds are ICU. We fixed the model, and the fit went
+from 0.33 to 0.94. A synthetic network could never have shown us that, because
+every synthetic hospital had the same bed mix."
 
-**Say it like this:** "We tuned the simulation to run at about 70% occupancy
-before we had any real data. When we checked against three thousand real
-hospitals, the actual figure was 70.0%. That was not fitted — it was a lucky
-confirmation that we were in the right regime."
+That is the strongest thing you can say about this work: **the real data caught
+a modelling error.** That only happens when the data is genuinely load-bearing.
 
-Where the model deliberately differs — our network has about half the ICU depth
-of a US hospital — the calibration report says so explicitly and quantifies it,
-because we are modelling a critical-care-scarce system on purpose.
+### Scenarios are real weeks, not dials
+
+We do not turn a "surge multiplier" up. We pick a week these hospitals lived
+through: the calmest fully-reported week (0.75 occupancy), the Delta peak (0.95),
+the post-pandemic crisis (0.96).
+
+Two things this corrected:
+
+- **The busiest weeks were not COVID.** Houston ran fuller in December 2023 than
+  in January 2021. We had assumed the opposite.
+- **The network never sat at 70%.** We had tuned to 0.70. Reality was 0.75–0.96
+  — a considerably harder regime than we had been simulating.
+
+### What is *not* real — say this before you are asked
+
+This is the half that matters most for credibility. Do not let a reviewer find
+it first.
+
+> The hospitals, their beds, their geography and their load are real. **Nothing
+> about how they negotiate is.** No dataset in the world records whether a
+> hospital refused a transfer, let alone whether it refused honestly — so the
+> dishonest-refusal behaviour is our assumption, and we sweep its parameters
+> rather than picking flattering ones.
+
+Also assumed, and named as such: operating rooms, ventilators, step-down beds
+and cath labs are not in the dataset, and neither is any specialty except
+paediatric intensive care. So **which hospital can treat what is assumed, not
+observed** — and since capability is what makes a transfer necessary, that is
+our biggest remaining data gap. The fix is a CMS join on the CCN, which every
+hospital record already carries.
+
+Every parameter is classified observed / derived / assumed in
+`docs/DATA_PROVENANCE.md` — **and that file is generated from the code**, so it
+cannot drift away from what the system actually does. For this network: 5
+observed, 5 derived, 7 assumed.
+
+### If a reviewer says "your data isn't real"
+
+Open `docs/DATA_PROVENANCE.md` and show them the facility table with the CCNs.
+Then run:
+
+```bash
+python experiments/fetch_network.py --list      # the 27 hospitals, by name
+python experiments/validate_occupancy.py        # simulated vs reported
+```
+
+Then tell them what is assumed, before they ask. The separate national check
+against 3,186 facilities (`python experiments/calibrate.py`) still exists as a
+*supporting* check on structural ratios — but it is not the validation, and do
+not present it as one.
+
+## 6b. The two newest pieces — and how to talk about them
+
+### Attested refusal: we removed an assumption instead of leaning on it
+
+This is the strongest thing to say about the project's honesty, so say it
+plainly and early:
+
+> "Our earlier results assumed a lying hospital simply cannot defend itself when
+> challenged. That's convenient and not obviously true — a real bed manager
+> would just repeat the lie. So we removed the assumption. In the attested
+> version, to discharge a challenge you must *sign* the claim, co-signed by a
+> key you don't control. The question stops being 'can a liar defend?' and
+> becomes 'will a liar sign?' — and we swept that from 0 to 1."
+
+| If a liar declines to sign... | Transfer success |
+|---|---|
+| never (signatures deter nobody) | 66.6% |
+| a quarter of the time | 81.3% |
+| half the time | 82.3% |
+| always | 83.9% |
+
+**The two endpoints are the proof the model is right.** At full deterrence the
+attested protocol reproduces the old assumption *exactly* (p = 1.0000). At zero
+deterrence it falls back to plain Contract Net (p = 0.31). Our old numbers were
+the optimistic end of this sweep all along, and now we can say so with a number.
+
+**What it signs, and why that matters.** Not a bed count — the *predicate*:
+"no unit available", or "the only free unit is inside the reserve I declare".
+Nothing about occupancy is disclosed. There are two predicates because a
+cautious hospital holding a reserve genuinely *has* a bed, and forcing it to
+certify "nothing free" would make an honest hospital sign something false. We
+found that by testing it: the single-predicate version produced two false
+accusations, and the test caught it.
+
+**If asked "so you detect perjury?" — say no.** That claim died under
+measurement:
+
+> "We built automatic perjury detection and then tested it in a run where every
+> signed statement was true by construction. It still produced 155 accusations,
+> thirteen against hospitals that never lie. A hospital that was full at 2pm and
+> admits someone at 2:30 after a discharge looks identical to one that lied.
+> No time window fixes it. So we stopped claiming detection. What an attestation
+> actually gives a regulator is one specific signed, timestamped proposition to
+> check against records it can already inspect — instead of standing access to
+> everyone's live bed state. We report the 0.61% false-positive rate on every
+> referral."
+
+### Real time: it is 9 milliseconds
+
+If anyone doubts this could run live, you have the number:
+
+> "Worst-case 99th-percentile decision latency is **12.3 milliseconds**, on 27
+> real hospitals, with half of them lying. That's 81 times inside a
+> one-second budget. Signature verification is 18 microseconds and needs no
+> round trip to any authority, which is what keeps it inside the clinical
+> window. Today's alternative spends 68 minutes of coordinator time."
+
+Volunteer the caveat before they ask: single process, in memory, no network, no
+database. It shows the *protocol* isn't the bottleneck, not that a deployment
+would be easy.
+
+Worth mentioning because it is a genuine engineering finding: getting there
+meant fixing a quadratic in the audit ledger. Every challenge rebuilt the whole
+chain to search it. On a four-day run, deliberation took 69.5 seconds; indexed,
+it takes 9.0. Twelve tests pin that the fast path returns byte-identical results.
 
 ## 7. Questions the panel will ask
 

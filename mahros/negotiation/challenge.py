@@ -58,6 +58,15 @@ from typing import Any
 
 from ..core.types import Bid, TransferRequest
 
+def _phrase(value: str) -> str:
+    """Readable resource name. The console shows these to clinicians."""
+    return {
+        "icu_bed": "ICU", "hdu_bed": "high-dependency", "ward_bed": "ward",
+        "or_slot": "operating-room", "cath_lab": "cath lab",
+        "ventilator": "ventilator",
+    }.get(value, value.replace("_", " "))
+
+
 #: How far back the ledger is consulted, in simulation minutes. Four hours.
 #: Long enough that a capability claim is genuinely contradicted; short enough
 #: that "we had a bed this morning" is not treated as evidence about tonight.
@@ -221,14 +230,15 @@ class ChallengeEngine:
         self, bid: Bid, req: TransferRequest, now: float
     ) -> list[Challenge]:
         """"We don't have that facility" -- also a matter of public record."""
-        nice = req.resource.value.replace("_", " ")
+        nice = _phrase(req.resource.value)
         declared = self.resource_registry.get(bid.bidder)
         if declared is not None and req.resource.value in declared:
             return [Challenge(
                 target=bid.bidder,
                 refusal_reason=bid.refusal_reason,
-                claim=(f"{bid.bidder} says it does not have a {nice}, but the network "
-                       f"directory lists one at that site."),
+                claim=(f"{bid.bidder} says it does not operate {nice} services at "
+                       f"all, but the public directory lists staffed {nice} "
+                       f"capacity at that site."),
                 evidence=[Evidence(
                     agreement_id=f"registry:{bid.bidder}",
                     receiver=bid.bidder, resource=req.resource.value,
@@ -244,12 +254,12 @@ class ChallengeEngine:
         if not rows:
             return []
         ev = self._evidence(
-            rows[:3], now, f"accepted a patient needing a {nice}, so it has one")
+            rows[:3], now, f"accepted a patient needing {nice} care, so it has one")
         return [Challenge(
             target=bid.bidder,
             refusal_reason=bid.refusal_reason,
-            claim=(f"{bid.bidder} says it does not offer a {nice}, but the shared "
-                   f"record shows it accepted a {nice} transfer "
+            claim=(f"{bid.bidder} says it does not operate {nice} services, but "
+                   f"the shared record shows it accepted a {nice} transfer "
                    f"{ev[0].minutes_ago:.0f} minutes ago."),
             evidence=ev,
         )]

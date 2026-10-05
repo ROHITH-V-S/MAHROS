@@ -186,6 +186,17 @@ def client():
     return TestClient(app)
 
 
+def _live_origin(client) -> str:
+    """A hospital id the *running app* actually knows.
+
+    The console defaults to the real Houston network, where ids are CMS
+    certification numbers. Hardcoding a synthetic "H00" here made the server
+    drop the request silently and left these websocket tests blocking forever
+    on frames that were never going to arrive.
+    """
+    return client.get("/api/state").json()["hospitals"][0]["id"]
+
+
 def test_index_and_state_endpoints(client):
     assert client.get("/").status_code == 200
     body = client.get("/api/state").json()
@@ -211,10 +222,16 @@ def test_dashboard_route_serves_or_explains(client):
 
 
 def test_transfer_endpoint(client):
+    # Take a real hospital id from the running network rather than hardcoding
+    # one. The console now defaults to the real Houston network, where ids are
+    # CMS certification numbers ("450068"), not synthetic labels ("H00").
+    state = client.get("/api/state").json()
+    origin = state["hospitals"][0]["id"]
     r = client.post("/api/transfer", json={
-        "origin": "H00", "resource": "icu_bed", "specialty": "general", "acuity": 4,
+        "origin": origin, "resource": "icu_bed", "specialty": "general",
+        "acuity": 4,
     })
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     assert "steps" in r.json()
 
 
@@ -226,7 +243,8 @@ def test_transfer_endpoint_rejects_bad_input(client):
 def test_websocket_streams_a_negotiation(client):
     with client.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "state"
-        ws.send_json({"action": "transfer", "origin": "H00", "resource": "icu_bed",
+        ws.send_json({"action": "transfer", "origin": _live_origin(client),
+                      "resource": "icu_bed",
                       "specialty": "general", "acuity": 4, "pace_ms": 0})
         types = []
         for _ in range(60):
@@ -246,7 +264,8 @@ def test_websocket_does_not_double_report_the_outcome(client):
     """The engine's terminal step must not also arrive as a raw step."""
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()
-        ws.send_json({"action": "transfer", "origin": "H00", "resource": "icu_bed",
+        ws.send_json({"action": "transfer", "origin": _live_origin(client),
+                      "resource": "icu_bed",
                       "specialty": "general", "acuity": 4, "pace_ms": 0})
         step_kinds = []
         for _ in range(60):

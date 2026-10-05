@@ -21,6 +21,7 @@ from __future__ import annotations
 import abc
 import hashlib
 import json
+import bisect
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -112,6 +113,14 @@ class HashChainLedger(LedgerBackend):
         self.block_size = block_size
         self.chain: list[Block] = []
         self._pending: list[dict[str, Any]] = []
+        #: Read-side indices, maintained on write. These hold references to the
+        #: same entry dicts the blocks hold -- `_seal_pending` copies the list,
+        #: not the entries -- so an indexed entry stays valid once sealed.
+        #:
+        #: Without these, every challenge rebuilt the whole ledger to filter it,
+        #: making deliberation quadratic in the length of the run.
+        self._by_receiver: dict[str, list[dict[str, Any]]] = {}
+        self._by_refuser: dict[str, list[dict[str, Any]]] = {}
         self._record_count = 0
         self._latencies: list[float] = []
         genesis = Block(index=0, timestamp=0.0, prev_hash="0" * 64)
@@ -138,6 +147,7 @@ class HashChainLedger(LedgerBackend):
             "decided_by": agreement.decided_by,
         }
         self._pending.append(entry)
+        self._by_receiver.setdefault(agreement.receiver, []).append(entry)
         self._record_count += 1
 
         block_index, block_hash = -1, ""
@@ -175,14 +185,16 @@ class HashChainLedger(LedgerBackend):
         Only capacity claims are recorded. Capability claims are checked
         against the public service directory and need no history.
         """
-        self._pending.append({
+        entry = {
             "kind": "refusal",
             "hospital": hospital,
             "resource": resource,
             "request_id": request_id,
             "reason": reason,
             "agreed_at": round(at, 4),
-        })
+        }
+        self._pending.append(entry)
+        self._by_refuser.setdefault(hospital, []).append(entry)
         self._record_count += 1
         if len(self._pending) >= self.block_size:
             self._seal_pending()
@@ -191,10 +203,8 @@ class HashChainLedger(LedgerBackend):
         self, hospital: str, since: float | None = None, resource: str | None = None
     ) -> list[dict[str, Any]]:
         rows = [
-            e for e in self.history()
-            if e.get("kind") == "refusal"
-            and e.get("hospital") == hospital
-            and (since is None or e.get("agreed_at", 0.0) >= since)
+            e for e in self._by_refuser.get(hospital, ())
+            if (since is None or e.get("agreed_at", 0.0) >= since)
             and (resource is None or e.get("resource") == resource)
         ]
         rows.sort(key=lambda e: e.get("agreed_at", 0.0), reverse=True)
@@ -212,15 +222,19 @@ class HashChainLedger(LedgerBackend):
         neither reveals private state, and no third party had to be trusted.
         """
         refusals = self.refusals_by(hospital, since=since)
-        accepts = [e for e in self.history()
-                   if e.get("kind") != "refusal" and e.get("receiver") == hospital]
+        accepts = sorted(self._by_receiver.get(hospital, ()),
+                         key=lambda e: e.get("agreed_at", 0.0))
+        times = [e.get("agreed_at", 0.0) for e in accepts]
         pairs = []
         for refusal in refusals:
             t0 = refusal.get("agreed_at", 0.0)
-            for accept in accepts:
-                t1 = accept.get("agreed_at", 0.0)
+            # Only acceptances inside the contradiction window can match, so
+            # seek to the window rather than walking the hospital's whole
+            # history for every refusal.
+            lo = bisect.bisect_right(times, t0)
+            hi = bisect.bisect_right(times, t0 + window_minutes)
+            for accept in accepts[lo:hi]:
                 if (accept.get("resource") == refusal.get("resource")
-                        and t0 < t1 <= t0 + window_minutes
                         and accept.get("request_id") != refusal.get("request_id")):
                     pairs.append((refusal, accept))
                     break
@@ -295,9 +309,8 @@ class HashChainLedger(LedgerBackend):
         load-bearing rather than decorative: it is what a challenge is made of.
         """
         rows = [
-            e for e in self.history()
-            if e.get("receiver") == hospital
-            and (since is None or e.get("agreed_at", 0.0) >= since)
+            e for e in self._by_receiver.get(hospital, ())
+            if (since is None or e.get("agreed_at", 0.0) >= since)
             and (resource is None or e.get("resource") == resource)
             and (specialty is None or e.get("specialty") == specialty)
         ]

@@ -1,12 +1,41 @@
 # Model assumptions
 
+> **Read [DATA_PROVENANCE.md](DATA_PROVENANCE.md) first.** That file is
+> generated from the code and covers the **real** hospital network that every
+> headline result now runs on: which facilities, where the data came from, and
+> which of their parameters are observed, derived or assumed.
+>
+> This document covers what remains **after** the real facility data is
+> accounted for: the behavioural, clinical and timing assumptions that no public
+> dataset supplies. It is now the *smaller* half of the model, but it is the
+> half that matters most, because it includes the strategic-refusal behaviour
+> the whole contribution is about.
+
 Every number in the simulation that is not derived from another number is listed
 here, **with its provenance**. This document exists so a reviewer can check the
 model rather than trust it, and so the sensitivity analysis has something concrete
 to vary.
 
+## What changed when the network became real
+
+Bed counts, ICU counts, hospital locations, network size, tier structure and
+per-hospital load are **no longer assumptions at all** — they are read from
+federal facility reporting for 27 named Houston hospitals, and the simulation is
+validated against the occupancy those hospitals actually reported (4.2 points
+mean absolute error, R² = 0.94).
+
+Three assumptions listed below were *falsified* by that data and have been
+corrected:
+
+| Was assumed | What the real data showed |
+|---|---|
+| Network sits near 70% occupancy | It ran at **0.75–0.96**. 0.70 was never observed. |
+| Surges are COVID waves | The **busiest weeks were post-pandemic** (Dec 2023 > Jan 2021). |
+| One admission mix fits every hospital | Bed composition varies enormously; a global mix starves the ICU at ICU-heavy facilities. Now fitted per hospital. |
+
+The remaining assumptions below are the ones the data could not touch.
 **None of these are measurements from a real hospital.** They are modelling
-choices. What this document adds is an honest label on each one.
+choices, and what this document adds is an honest label on each one.
 
 ## Provenance tags
 

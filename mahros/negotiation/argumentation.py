@@ -58,6 +58,11 @@ class ArgKind(str, enum.Enum):
     COUNTER_OFFER = "counter_offer"    # "I can, but later / on conditions."
     CHALLENGE = "challenge"            # "The record contradicts that refusal."
     DEFENCE = "defence"                # "No it does not, and here is why."
+    #: "Here is that same claim, signed." A defence that carries a co-signed,
+    #: non-repudiable assertion of the contested predicate rather than a bare
+    #: restatement. Strictly stronger than DEFENCE: it costs the speaker
+    #: something, because a false one is durable evidence against them.
+    ATTESTATION = "attestation"
     BURDEN_OBJECTION = "burden_objection"   # "Do not pick me, I am over my share."
 
 
@@ -223,6 +228,11 @@ def build_attacks(framework: ArgumentationFramework) -> None:
          *"You said you couldn't; the record says otherwise."*
       2. A defence attacks the challenge it answers.
          *"The record doesn't say what you think it says."*
+      2b. An attestation attacks the challenge it answers, the same way a
+         defence does. The difference is not in the graph -- it is that making
+         this move requires signing, so a hospital unwilling to sign simply
+         does not get to make it. That is the whole point: the *cost* of the
+         move does the work, not its position in the framework.
       3. A burden objection attacks that hospital's own bid.
          *"Don't send it here, we're already over our share."*
       4. A counter-offer attacks that hospital's own original bid.
@@ -240,7 +250,8 @@ def build_attacks(framework: ArgumentationFramework) -> None:
     for subject, args in by_subject.items():
         refusals = [a for a in args if a.kind is ArgKind.REFUSAL]
         challenges = [a for a in args if a.kind is ArgKind.CHALLENGE]
-        defences = [a for a in args if a.kind is ArgKind.DEFENCE]
+        defences = [a for a in args if a.kind in
+                    (ArgKind.DEFENCE, ArgKind.ATTESTATION)]
         bids = [a for a in args if a.kind is ArgKind.BID]
         objections = [a for a in args if a.kind is ArgKind.BURDEN_OBJECTION]
         counters = [a for a in args if a.kind is ArgKind.COUNTER_OFFER]

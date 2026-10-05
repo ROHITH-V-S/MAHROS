@@ -26,7 +26,22 @@ from mahros.sim.scenario import SCENARIOS, build_network, travel_time_matrix
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
 
-SCENARIO_ORDER = ["baseline", "surge", "scarcity", "surge_scarcity"]
+#: The real-network ladder: the same 27 Houston hospitals under the load they
+#: actually carried in four different weeks, from the calmest fully-reported
+#: week to the post-pandemic capacity crisis. Selected by observed occupancy,
+#: not by narrative convenience.
+SCENARIO_ORDER = ["houston_calm", "houston_baseline", "houston_typical",
+                  "houston_surge", "houston_post_pandemic"]
+
+#: The synthetic ladder, retained as the ICU-scarcity counterfactual and for
+#: offline reproduction. `python experiments/run_all.py 5 --synthetic`.
+SYNTHETIC_SCENARIO_ORDER = ["baseline", "surge", "scarcity", "surge_scarcity"]
+
+#: The scenario the ablations, the per-hospital detail and the dashboard demos
+#: are drawn from. Kept as a named constant because it was previously hardcoded
+#: to the synthetic network in six places, which quietly meant the headline
+#: ablation table described a different network from the headline sweep.
+PRIMARY_SCENARIO = "houston_surge"
 #: Largest difference in transfer success rate we are willing to call "the
 #: same". Declared before looking at any result. Two percentage points is below
 #: the seed-to-seed noise a commissioner would see in a single fortnight.
@@ -97,7 +112,7 @@ def main(n_seeds: int = 8) -> None:
     # needs more seeds than a descriptive sweep does.
 
     # -- ablation ---------------------------------------------------------- #
-    print("\nablation on surge_scarcity...")
+    print(f"\nablation on {PRIMARY_SCENARIO}...")
     # Real ablations only. The old `no_audit` arm was bit-identical to `full`
     # because the ledger touched no decision -- it was a no-op reported as a
     # result. Now the ledger is the evidence base for challenging a refusal, so
@@ -114,8 +129,9 @@ def main(n_seeds: int = 8) -> None:
                                  "audit_enabled": False},
     }
     out["ablation"] = {}
+    out["ablation_scenario"] = PRIMARY_SCENARIO
     for label, kw in ablation_arms.items():
-        runs = [M.compute(run_one("surge_scarcity", "mahros", s, **kw)) for s in seeds]
+        runs = [M.compute(run_one(PRIMARY_SCENARIO, "mahros", s, **kw)) for s in seeds]
         out["ablation"][label] = M.aggregate(runs)
         print(f"  {label:30s} success={out['ablation'][label]['success_rate']:.1%} "
               f"gini={out['ablation'][label]['burden_gini']:.3f} "
@@ -123,8 +139,8 @@ def main(n_seeds: int = 8) -> None:
 
     # -- per-hospital detail from one representative run -------------------- #
     print("\nper-hospital detail + sample decisions...")
-    detail = run_one("surge_scarcity", "mahros", seeds[0])
-    detail_nofair = run_one("surge_scarcity", "mahros", seeds[0], fairness_enabled=False)
+    detail = run_one(PRIMARY_SCENARIO, "mahros", seeds[0])
+    detail_nofair = run_one(PRIMARY_SCENARIO, "mahros", seeds[0], fairness_enabled=False)
 
     def hospital_rows(res):
         rows = []
@@ -179,7 +195,7 @@ def main(n_seeds: int = 8) -> None:
     # -- request-level distribution for the wait-time histogram ------------- #
     out["wait_distribution"] = {}
     for strategy in ["mahros", "phone", "central"]:
-        res = run_one("surge_scarcity", strategy, seeds[0])
+        res = run_one(PRIMARY_SCENARIO, strategy, seeds[0])
         waits = [round(r.wait_minutes, 1) for r in res.requests
                  if r.status is RequestStatus.COMPLETED and r.wait_minutes is not None]
         out["wait_distribution"][strategy] = waits
@@ -187,7 +203,7 @@ def main(n_seeds: int = 8) -> None:
     # -- acuity breakdown --------------------------------------------------- #
     out["by_acuity"] = {}
     for strategy in ["mahros", "phone", "central"]:
-        res = run_one("surge_scarcity", strategy, seeds[0])
+        res = run_one(PRIMARY_SCENARIO, strategy, seeds[0])
         rows = {}
         for lvl in [2, 3, 4, 5]:
             grp = [r for r in res.requests if int(r.acuity) == lvl]
@@ -242,4 +258,8 @@ def main(n_seeds: int = 8) -> None:
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 8)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--synthetic" in sys.argv:
+        SCENARIO_ORDER = SYNTHETIC_SCENARIO_ORDER
+        PRIMARY_SCENARIO = "surge_scarcity"
+    main(int(args[0]) if args else 8)

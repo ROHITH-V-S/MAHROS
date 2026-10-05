@@ -36,6 +36,9 @@ Key implementation details that make results trustworthy:
 
 from __future__ import annotations
 
+import hashlib
+import random
+
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -50,12 +53,42 @@ from ..fairness.metrics import FairnessLedger
 from ..privacy.anonymizer import PrivacyAudit
 from .argumentation import ArgKind, Argument, ArgumentationFramework, Label, build_attacks
 from .challenge import ChallengeEngine
+from .attestation import NO_UNIT_AVAILABLE
+
+#: Refusal reasons a spot check may demand a signature for.
+#:
+#: Capacity only. Capability claims are verifiable against the public directory
+#: without anyone signing anything, and are settled before the bidding policy
+#: runs, so there is no statement behind them to certify.
+SPOT_CHECKABLE_REASONS = frozenset({"at_self_protection_reserve"})
 from .messages import Message, MessageBus, Perf
 from .scoring import ScoredBid, ScoringWeights, is_contested, score_bids
 
 
 @dataclass
 class CNPConfig:
+    #: Require a challenged refusal to be discharged by a **signed** assertion
+    #: rather than a bare restatement. Off by default so every pre-existing
+    #: result is unchanged; `experiments/attestation.py` turns it on.
+    attestation_enabled: bool = False
+    #: P(a hospital that fabricated a refusal declines to sign it). A declared
+    #: assumption about institutional behaviour, swept end to end -- never a
+    #: free parameter chosen to flatter the mechanism.
+    attestation_deterrence: float = 0.8
+    #: Probability that a refusal is challenged *without* any evidence against
+    #: it -- a random spot check.
+    #:
+    #: Every other check in this protocol is reactive: it examines a refusal
+    #: only once the ledger has already contradicted it. A cartel that
+    #: coordinates its abstentions never produces that contradiction, so it is
+    #: never examined, and attestation -- which only fires on a challenge --
+    #: never gets to ask it anything. Spot checks close that hole by asking
+    #: some hospitals to certify refusals nobody had a reason to doubt.
+    #:
+    #: The cost is real and is reported: honest hospitals are asked to sign
+    #: claims that were never in question. 0.0 keeps the purely reactive
+    #: protocol, which is every earlier result.
+    spot_check_rate: float = 0.0
     bid_window_minutes: float = 2.0      # how long the origin waits for proposals
     max_peers: int = 8                   # cap the broadcast (bandwidth + realism)
     reservation_hold_minutes: float = 45.0
@@ -99,6 +132,68 @@ class NegotiationOutcome:
     refusals_overruled: int = 0
 
 
+def resource_phrase(resource) -> str:
+    """Readable name for a resource, for text a clinician will read."""
+    value = getattr(resource, "value", str(resource))
+    return {
+        "icu_bed": "ICU bed",
+        "hdu_bed": "high-dependency bed",
+        "ward_bed": "ward bed",
+        "or_slot": "operating-room slot",
+        "cath_lab": "cath lab",
+        "ventilator": "ventilator",
+    }.get(value, value.replace("_", " "))
+
+
+def service_phrase(resource) -> str:
+    """Name of the *service*, for capability claims.
+
+    Capability and capacity talk about different nouns. A hospital does not
+    operate "ICU bed services"; it operates an ICU. It is the *bed* that is
+    free or not.
+    """
+    value = getattr(resource, "value", str(resource))
+    return {
+        "icu_bed": "intensive care",
+        "hdu_bed": "high-dependency care",
+        "ward_bed": "inpatient ward",
+        "or_slot": "operating theatre",
+        "cath_lab": "cardiac catheterisation",
+        "ventilator": "ventilated care",
+    }.get(value, value.replace("_", " "))
+
+
+def defence_wording(hospital: str, reason: str, req) -> str:
+    """What the hospital says when it stands by a challenged refusal.
+
+    Keyed on the reason actually given, because the reasons are not
+    interchangeable. "We do not operate an ICU" is a permanent fact about the
+    building; "our ICU is full" is a statement about this afternoon. A single
+    sentence covering both -- which is what this used to be -- produced a
+    console that told a hospital with no ICU that circumstances had changed
+    since an earlier admission it never made.
+    """
+    thing = resource_phrase(req.resource)
+    service = service_phrase(req.resource)
+    specialty = getattr(req.specialty, "value", str(req.specialty))
+    return {
+        "resource_not_offered": (
+            f"{hospital} does not provide {service} at this site at all. That "
+            f"is a permanent fact about the hospital, not a comment on today's "
+            f"occupancy."),
+        "no_specialty_capability": (
+            f"{hospital} is not a {specialty} centre and cannot provide that "
+            f"care at any level of occupancy."),
+        "at_self_protection_reserve": (
+            f"{hospital} does operate {thing} capacity, but has none free for "
+            f"this patient right now. Its own capacity record supports the "
+            f"refusal."),
+        "cannot_meet_clinical_deadline": (
+            f"{hospital} cannot get this patient into {service} inside the "
+            f"clinical safe window, however willing it is."),
+    }.get(reason, f"{hospital} stands by its refusal: its own record supports it.")
+
+
 class ContractNetNegotiator:
     """Runs one CFP to completion. Instantiated per request by the runner."""
 
@@ -113,6 +208,8 @@ class ContractNetNegotiator:
         config: CNPConfig,
         coordinator=None,                # llm.coordinator.LLMCoordinator | None
         ledger=None,                     # ledger.interface.LedgerBackend | None
+        attestation=None,                # negotiation.attestation.AttestationAuthority
+        corefusal=None,                  # negotiation.collusion.CoRefusalDetector
         observer: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.hospitals = hospitals
@@ -124,6 +221,13 @@ class ContractNetNegotiator:
         self.config = config
         self.coordinator = coordinator
         self.ledger = ledger
+        #: Watches which hospitals refuse the same requests together. Purely
+        #: observational: it reads what the protocol already made public and is
+        #: never consulted during a negotiation.
+        self.corefusal = corefusal
+        #: Issues and verifies co-signed capacity attestations. None means the
+        #: unattested protocol, which is the default and the ablation baseline.
+        self.attestation = attestation
         # Optional trace hook. The batch simulation leaves this None (an
         # observer that did work would distort the timings we are measuring);
         # the live demo server uses it to stream each protocol step to a UI.
@@ -138,16 +242,104 @@ class ContractNetNegotiator:
                 hid: {s.value for s in getattr(h, "specialties", set())}
                 for hid, h in hospitals.items()
             },
+            # A hospital offers a resource when it *has* one. The network
+            # builder creates a pool for every resource type, including the
+            # ones a facility does not operate -- Texas Orthopedic Hospital
+            # reports zero staffed ICU beds and still gets an `icu_bed` pool
+            # with capacity 0. Listing those in the public directory made the
+            # directory contradict honest refusals, which is a false accusation
+            # with extra steps.
             resource_registry={
-                hid: {r.value for r in getattr(h, "resources", None).pools}
+                hid: {r.value for r, pool in getattr(h, "resources").pools.items()
+                      if pool.capacity > 0}
                 for hid, h in hospitals.items()
                 if getattr(h, "resources", None) is not None
             },
         )
         self.deliberations = 0
+        self.total_attested = 0
+        self.total_attest_refused = 0
+        self.total_spot_checks = 0
+        self.total_spot_check_failures = 0
+        # Spot checks must be unpredictable to a hospital but reproducible for
+        # the experiment, so the stream is seeded from the network identity.
+        # Seeded from a STABLE digest, not hash(): string hashing is
+        # randomised per process, which would make spot checks
+        # irreproducible across runs.
+        self._rng = random.Random(int(hashlib.sha256(
+            "|".join(sorted(hospitals)).encode()).hexdigest()[:8], 16))
         self.total_challenges = 0
         self.total_overruled = 0
         self.total_burden_objections = 0
+
+    def _asserted_defence(self, bid, req, af) -> bool:
+        """The original protocol: the hospital simply restates its refusal."""
+        if not self.hospitals[bid.bidder].defend(req.request_id, bid.refusal_reason):
+            return False
+        af.add(Argument(
+            arg_id=f"defence:{bid.bidder}",
+            kind=ArgKind.DEFENCE, speaker=bid.bidder, subject=bid.bidder,
+            claim=defence_wording(bid.bidder, bid.refusal_reason, req),
+            machine_reason=bid.refusal_reason,
+        ))
+        return True
+
+    def _attested_defence(self, bid, req, af, now: float) -> bool:
+        """The attested protocol: discharge the challenge, or withdraw.
+
+        The hospital is offered a choice it does not get on a telephone. It may
+        sign the contested predicate -- disclosing nothing beyond the claim it
+        already made -- and the challenge falls. Or it declines, and the
+        refusal is struck out exactly as an undefended one would be.
+
+        A signature that does not verify is treated as no signature at all.
+        """
+        hospital = self.hospitals[bid.bidder]
+        if not hospital.will_attest(req.request_id,
+                                    self.config.attestation_deterrence):
+            self.total_attest_refused += 1
+            self.attestation.record_declined()
+            self._emit("attestation", {
+                "request_id": req.request_id,
+                "hospital": bid.bidder,
+                "signed": False,
+                "claim": (f"{bid.bidder} was asked to certify its refusal under "
+                          f"signature and declined. The refusal is withdrawn."),
+            })
+            return False
+
+        # Certify the proposition this hospital can honestly make. A refusal
+        # held on a declared reserve is a different claim from "there is
+        # nothing free", and conflating them would make a cautious hospital
+        # sign something false.
+        predicate = hospital.attested_predicate(req.request_id, req.resource)
+        if predicate is None:
+            predicate = NO_UNIT_AVAILABLE
+        att = self.attestation.attest(
+            hospital=bid.bidder, request_id=req.request_id,
+            resource=req.resource.value, at=now, asserted=predicate)
+        if not self.attestation.verify(att):
+            self.total_attest_refused += 1
+            return False
+
+        self.total_attested += 1
+        af.add(Argument(
+            arg_id=f"defence:{bid.bidder}",
+            kind=ArgKind.ATTESTATION, speaker=bid.bidder, subject=bid.bidder,
+            claim=(f"{bid.bidder} certifies under signature that no "
+                   f"{req.resource.value.replace('_', ' ')} was available to this "
+                   f"request. Co-signed, non-repudiable, and falsifiable by its "
+                   f"own later acceptances."),
+            machine_reason=bid.refusal_reason,
+            evidence=(att.digest,),
+        ))
+        self._emit("attestation", {
+            "request_id": req.request_id,
+            "hospital": bid.bidder,
+            "signed": True,
+            **att.as_dict(),
+        })
+        return True
 
     def _emit(self, kind: str, payload: dict) -> None:
         if self.observer is not None:
@@ -291,6 +483,38 @@ class ContractNetNegotiator:
         for bid in bids:
             if bid.feasible:
                 continue
+
+            # Random spot check: ask for certification with no evidence at all.
+            # This is the only proactive move in the protocol, and it exists
+            # because a coordinated cartel never triggers a reactive one.
+            #
+            # Only *capacity* claims are spot-checked. A capability claim --
+            # "we don't run a cath lab", "we don't offer that resource" -- is
+            # already checkable against the public service directory at no cost
+            # to anyone's privacy, so demanding a signature for it would buy
+            # nothing. It would also be actively harmful: those refusals are
+            # decided before a hospital's bidding policy is consulted and leave
+            # no statement on record, so a hospital asked to certify one could
+            # not, and an honest refusal would be struck out for it.
+            if (self.config.spot_check_rate > 0.0
+                    and self.attestation is not None
+                    and self.config.attestation_enabled
+                    and bid.refusal_reason in SPOT_CHECKABLE_REASONS
+                    and self._rng.random() < self.config.spot_check_rate):
+                self.total_spot_checks += 1
+                if not self._attested_defence(bid, req, af, now):
+                    # Would not certify a refusal it had just made in public.
+                    af.add(Argument(
+                        arg_id=f"challenge:{bid.bidder}",
+                        kind=ArgKind.CHALLENGE, speaker=req.origin,
+                        subject=bid.bidder,
+                        claim=(f"{bid.bidder} was spot-checked and declined to "
+                               f"certify its refusal under signature."),
+                        machine_reason=bid.refusal_reason,
+                    ))
+                    self.total_spot_check_failures += 1
+                continue
+
             for challenge in self.challenges.challenges_for(bid, req, now):
                 af.add(Argument(
                     arg_id=f"challenge:{bid.bidder}",
@@ -308,28 +532,37 @@ class ContractNetNegotiator:
                 })
 
                 # 3. ...and the challenged hospital answers for itself.
-                if self.hospitals[bid.bidder].defend(req.request_id, bid.refusal_reason):
-                    af.add(Argument(
-                        arg_id=f"defence:{bid.bidder}",
-                        kind=ArgKind.DEFENCE, speaker=bid.bidder, subject=bid.bidder,
-                        claim=(f"{bid.bidder} stands by its refusal: its own capacity "
-                               f"record supports it. Circumstances changed since that "
-                               f"earlier admission."),
-                        machine_reason=bid.refusal_reason,
-                    ))
-                    self._emit("defence", {
-                        "request_id": req.request_id,
-                        "defender": bid.bidder,
-                        "upheld": True,
-                        "reason": bid.refusal_reason,
-                    })
+                #
+                # Two protocols here, and the difference is the point.
+                #
+                # Unattested (the default, and the arm every earlier result
+                # used): the hospital "defends", and the simulator decides
+                # whether it can by looking at whether it was lying. That is an
+                # optimistic assumption -- a real liar would simply repeat the
+                # lie -- and it hands the mechanism a free win.
+                #
+                # Attested: the hospital must discharge the challenge by
+                # *signing* the contested predicate, co-signed by a key it does
+                # not solely control. Nothing is assumed about whether a liar
+                # can defend; the question becomes whether it will sign, which
+                # is an institutional parameter that gets swept.
+                if self.attestation is not None and self.config.attestation_enabled:
+                    upheld = self._attested_defence(bid, req, af, now)
                 else:
-                    self._emit("defence", {
-                        "request_id": req.request_id,
-                        "defender": bid.bidder,
-                        "upheld": False,
-                        "reason": bid.refusal_reason,
-                    })
+                    upheld = self._asserted_defence(bid, req, af)
+
+                self._emit("defence", {
+                    "request_id": req.request_id,
+                    "defender": bid.bidder,
+                    "upheld": upheld,
+                    "reason": bid.refusal_reason,
+                    # The console used to hardcode one capacity-flavoured
+                    # sentence here regardless of what was claimed. Send the
+                    # real wording so the UI shows the argument that was made.
+                    "claim": defence_wording(bid.bidder, bid.refusal_reason, req),
+                    "attested": bool(self.attestation is not None
+                                     and self.config.attestation_enabled),
+                })
 
         # 4. A hospital carrying well over its share may object to its own bid
         #    -- but only for a patient who is not critical, and only when
@@ -591,6 +824,15 @@ class ContractNetNegotiator:
                 break
             self.announce(req, peers, now)
             bids = self.collect_bids(req, peers, now)
+
+            # Record who was asked and who said no, before deliberation rewrites
+            # anything. The detector must see what hospitals *said*, not what
+            # survived being challenged.
+            if self.corefusal is not None:
+                self.corefusal.observe(
+                    asked=[b.bidder for b in bids],
+                    refused=[b.bidder for b in bids if not b.feasible],
+                    now=now, resource=req.resource.value)
 
             # Deliberation: check the refusals against the shared record before
             # accepting them. Costs one extra parallel exchange.

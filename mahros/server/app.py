@@ -31,7 +31,7 @@ app = FastAPI(title="MAHROS live demo", docs_url="/api/docs")
 # One shared network per server process. This is a demo console, not a
 # multi-tenant service -- everyone connected watches the same hospitals, which
 # is exactly what you want when projecting it in a room.
-NET = LiveNetwork(scenario="baseline", seed=42)
+NET = LiveNetwork(scenario="houston_baseline", seed=42)
 # 55% occupancy: the 25th percentile of the 3,186 real hospitals in the HHS
 # reference data, and the regime where a protective hospital genuinely *has* a
 # bed to give -- which is what makes a fabricated refusal a fabrication rather
@@ -55,7 +55,7 @@ class TransferBody(BaseModel):
 
 
 class ResetBody(BaseModel):
-    scenario: str = "baseline"
+    scenario: str = "houston_baseline"
     seed: int = 42
     load: float = 0.55
     fairness_enabled: bool = True
@@ -373,7 +373,7 @@ async def ws_endpoint(ws: WebSocket):
 
             elif action == "reset":
                 globals()["NET"] = LiveNetwork(
-                    scenario=msg.get("scenario", "baseline"),
+                    scenario=msg.get("scenario", "houston_baseline"),
                     seed=int(msg.get("seed", 42)),
                     fairness_enabled=bool(msg.get("fairness_enabled", True)),
                     argumentation_enabled=bool(msg.get("argumentation_enabled", True)),

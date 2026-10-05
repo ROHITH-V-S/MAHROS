@@ -80,6 +80,12 @@ class StrategyContext:
     weights: ScoringWeights
     cnp: CNPConfig
     coordinator: Any = None
+    #: negotiation.attestation.AttestationAuthority, or None for the unattested
+    #: protocol (the default, and the arm every earlier result used).
+    attestation: Any = None
+    #: negotiation.collusion.CoRefusalDetector -- advisory, never in the
+    #: decision path.
+    corefusal: Any = None
     rng: random.Random = field(default_factory=lambda: random.Random(7))
     #: The event loop. Only the batching optimiser reads it, and only to see
     #: which requests fall inside its own collection window.
@@ -106,6 +112,8 @@ class MahrosStrategy(Strategy):
             config=ctx.cnp,
             coordinator=ctx.coordinator,
             ledger=ctx.ledger,
+            attestation=ctx.attestation,
+            corefusal=ctx.corefusal,
         )
         self.contested = 0
         self.rounds_used = 0
@@ -153,6 +161,12 @@ class MahrosStrategy(Strategy):
             "burden_objections": neg.total_burden_objections,
             "misreports": misreports,
             "detection_rate": round(neg.total_overruled / misreports, 4) if misreports else 0.0,
+            # Proactive checking: refusals examined with no evidence against
+            # them, and how many the hospital would not certify.
+            "spot_checks": neg.total_spot_checks,
+            "spot_check_failures": neg.total_spot_check_failures,
+            "attestations": neg.total_attested,
+            "attestations_refused": neg.total_attest_refused,
         }
 
 

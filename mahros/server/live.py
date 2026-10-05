@@ -80,7 +80,8 @@ class LiveNetwork:
             hc.hospital_id: Hospital(hc, self, policy=HonestPolicy(), seed=seed)
             for hc in hospital_cfgs
         }
-        self._tt = travel_time_matrix(hospital_cfgs, cfg.ambulance_speed_kmh)
+        self._tt = travel_time_matrix(hospital_cfgs, cfg.ambulance_speed_kmh,
+                                      metro=cfg.real_metro)
 
         weights = {
             h.hospital_id: float(sum(n for r, n in h.capacities.items() if r.is_critical))

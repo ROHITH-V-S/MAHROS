@@ -34,6 +34,13 @@ class HospitalConfig:
     coordinators: int = 1                # staff who can broker a transfer at a time
     base_arrival_rate: float = 0.9       # admissions per hour
     escalation_prob: float = 0.14        # P(admitted patient needs escalation)
+    #: Where this hospital's own admissions land, as
+    #: ``{resource: (weight, mean_los_minutes)}``. Real networks fit this per
+    #: facility from its observed bed composition, because hospitals differ far
+    #: more in that composition than a single global mix can express -- one
+    #: Houston facility reports 47% of its inpatient beds as ICU. None falls
+    #: back to the scenario-wide mix, which is what synthetic networks use.
+    admission_mix: dict | None = None
 
 
 class Hospital:
@@ -180,6 +187,37 @@ class Hospital:
         return bid
 
     # -- answering a challenge --------------------------------------------- #
+    def will_attest(self, request_id: str, deterrence: float = 1.0) -> bool:
+        """Will this hospital sign a non-repudiable assertion of its refusal?
+
+        Delegates to the behaviour policy, which is where the interesting
+        difference lives: an honest hospital signs without hesitation, a lying
+        one must decide whether the claim is worth its signature.
+        """
+        statement = self._statements.get(request_id)
+        if statement is None:
+            return False
+        return self.policy.will_attest(statement, self._rng, deterrence)
+
+    def attested_predicate(self, request_id: str, resource) -> str | None:
+        """Which capacity predicate this hospital can honestly certify.
+
+        Returns None when neither is true, which is the position a fabricated
+        refusal is in: there is a free unit and it is not inside any declared
+        reserve, so there is nothing truthful to sign.
+        """
+        from ..negotiation.attestation import (
+            AT_DECLARED_RESERVE,
+            NO_UNIT_AVAILABLE,
+        )
+        pool = self.resources.pool(resource)
+        if pool is None or pool.available <= 0:
+            return NO_UNIT_AVAILABLE
+        reserve = getattr(self.policy, "extra_reserve", 0)
+        if pool.available <= reserve:
+            return AT_DECLARED_RESERVE
+        return None
+
     def defend(self, request_id: str, refusal_reason: str) -> bool:
         """Can this hospital justify a refusal it is being challenged on?
 

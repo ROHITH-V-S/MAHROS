@@ -26,6 +26,12 @@ analysis = ["numpy>=1.24", "pandas>=2.0", "matplotlib>=3.7"]
 privacy = ["presidio-analyzer>=2.2", "presidio-anonymizer>=2.2"]
 # On-chain audit against a local Hardhat/Anvil node (falls back to the hash chain).
 chain = ["web3>=6.0"]
+# Real asymmetric signatures for attested refusals. Without this the
+# attestation layer falls back to HMAC-SHA256, which models the protocol
+# faithfully but does NOT provide non-repudiation -- a shared secret means the
+# verifier could forge what it verifies. Install this to make the
+# non-repudiation claim real rather than modelled.
+attest = ["cryptography>=42.0"]
 # Cross-checking the hand-rolled statistics and the Hungarian solver against
 # reference implementations. Never required: mahros.eval is pure standard
 # library, and tests/test_argumentation.py skips these checks when absent.

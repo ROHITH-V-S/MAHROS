@@ -32,7 +32,9 @@ from mahros.sim.strategies import PhoneTreeStrategy
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
-SCENARIO = "surge_scarcity"
+#: Default: the real Houston network at its observed Delta-peak load.
+#: Pass a scenario name as the second argument for the synthetic arm.
+SCENARIO = "houston_surge"
 
 
 def run(strategy: str, seed: int, **kw) -> float:

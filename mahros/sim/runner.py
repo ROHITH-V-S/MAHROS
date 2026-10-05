@@ -38,6 +38,8 @@ from ..hospital.behaviours import assign_policies
 from ..hospital.hospital import Hospital, HospitalConfig
 from ..ledger.interface import HashChainLedger, LedgerBackend
 from ..llm.coordinator import LLMCoordinator
+from ..negotiation.attestation import AttestationAuthority, Keyring
+from ..negotiation.collusion import Cartel, CoRefusalDetector
 from ..negotiation.cnp import CNPConfig
 from ..negotiation.messages import MessageBus
 from ..negotiation.scoring import ScoringWeights
@@ -87,6 +89,22 @@ class RunConfig:
     shirk_comfort_threshold: float = 0.55
     #: Challenge refusals the ledger contradicts. Off = plain Contract Net.
     enable_argumentation: bool = True
+    #: Require a challenged refusal to be discharged by a co-signed,
+    #: non-repudiable attestation rather than a bare restatement. Off by
+    #: default: every pre-existing result is the unattested protocol.
+    enable_attestation: bool = False
+    #: P(a hospital that fabricated a refusal declines to sign it). A declared
+    #: assumption about institutional behaviour; swept end to end.
+    attestation_deterrence: float = 0.8
+    #: P(a refusal is challenged with no evidence against it). The only
+    #: proactive check in the protocol; exists because a coordinated cartel
+    #: never triggers a reactive one. 0.0 = purely reactive, as before.
+    spot_check_rate: float = 0.0
+    #: Number of hospitals forming a coordinated-abstention cartel. 0 = none,
+    #: which is every pre-existing result.
+    collusion_size: int = 0
+    #: How long one member's refusal obliges the rest to abstain, in minutes.
+    collusion_abstain_window: float = 60.0
 
 
 @dataclass
@@ -100,6 +118,14 @@ class RunResult:
     bus: MessageBus | None = None
     privacy: PrivacyAudit | None = None
     coordinator: LLMCoordinator | None = None
+    #: negotiation.attestation.AttestationAuthority, or None when the run used
+    #: the unattested protocol. Carries the issued/declined counts and is what
+    #: `audit()` is called on to find falsified attestations after the fact.
+    attestation: Any = None
+    #: negotiation.collusion.CoRefusalDetector, always present.
+    corefusal: Any = None
+    #: negotiation.collusion.Cartel when one was formed, else None.
+    cartel: Any = None
     strategy_stats: dict = field(default_factory=dict)
     total_admissions: int = 0
     rejected_admissions: int = 0
@@ -120,6 +146,15 @@ class SimulationRunner:
         # raising the strategic fraction adds liars to the existing set rather
         # than reshuffling which hospitals are lying -- otherwise the
         # adversarial sweep would confound dose with identity.
+        # The cartel is a side channel between colluding hospitals, not part of
+        # the protocol. The detector is the defence and reads only what the
+        # protocol already made public.
+        self.cartel = Cartel(
+            members=frozenset(),
+            abstain_window=cfg.collusion_abstain_window,
+        ) if cfg.collusion_size else None
+        self.corefusal = CoRefusalDetector()
+
         self.policies = assign_policies(
             [hc.hospital_id for hc in hospital_cfgs],
             strategic_fraction=cfg.strategic_fraction,
@@ -132,13 +167,20 @@ class SimulationRunner:
             # most from saying no. Modelling the adversary where it would
             # actually appear, rather than uniformly at random.
             incentive_rank={hc.hospital_id: float(hc.tier) for hc in hospital_cfgs},
+            collusion_size=cfg.collusion_size,
+            cartel=self.cartel,
         )
+        if self.cartel is not None:
+            self.cartel.members = frozenset(
+                hid for hid, p in self.policies.items()
+                if p.name == "colluding")
         self.hospitals: dict[str, Hospital] = {
             hc.hospital_id: Hospital(
                 hc, self.sim, policy=self.policies[hc.hospital_id], seed=cfg.seed)
             for hc in hospital_cfgs
         }
-        self._tt = travel_time_matrix(hospital_cfgs, self.scenario.ambulance_speed_kmh)
+        self._tt = travel_time_matrix(hospital_cfgs, self.scenario.ambulance_speed_kmh,
+                                      metro=self.scenario.real_metro)
 
         # -- layers --------------------------------------------------------- #
         weights = {
@@ -152,6 +194,11 @@ class SimulationRunner:
         self.privacy = PrivacyAudit(build_anonymizer(prefer_presidio=cfg.use_presidio))
         self.bus = MessageBus()
         self.ledger: LedgerBackend = HashChainLedger() if cfg.audit_enabled else _null_ledger()
+        # Issues and verifies co-signed capacity attestations. Deterministic in
+        # the seed so a run is reproducible.
+        self.attestation = (
+            AttestationAuthority(Keyring(seed=f"mahros-{cfg.seed}".encode()))
+            if cfg.enable_attestation else None)
         self.coordinator = LLMCoordinator() if cfg.llm_enabled else None
 
         self.ctx = StrategyContext(
@@ -163,7 +210,12 @@ class SimulationRunner:
             ledger=self.ledger,
             weights=ScoringWeights(fairness_enabled=cfg.fairness_enabled),
             cnp=CNPConfig(enable_llm_arbitration=cfg.llm_arbitration,
-                          enable_argumentation=cfg.enable_argumentation),
+                          enable_argumentation=cfg.enable_argumentation,
+                          attestation_enabled=cfg.enable_attestation,
+                          attestation_deterrence=cfg.attestation_deterrence,
+                          spot_check_rate=cfg.spot_check_rate),
+            attestation=self.attestation,
+            corefusal=self.corefusal,
             coordinator=self.coordinator,
             rng=random.Random(cfg.seed + 555),
             sim=self.sim,
@@ -201,7 +253,7 @@ class SimulationRunner:
         self.sim.schedule(gap, ARRIVAL, {"hospital": hid})
 
         patient = self.gen.make_patient(hid)
-        resource, los = self.gen.initial_admission()
+        resource, los = self.gen.initial_admission(hosp.cfg)
         self.total_admissions += 1
 
         if not hosp.admit_local(resource):
@@ -351,6 +403,9 @@ class SimulationRunner:
             bus=self.bus,
             privacy=self.privacy,
             coordinator=self.coordinator,
+            attestation=self.attestation,
+            corefusal=self.corefusal,
+            cartel=self.cartel,
             strategy_stats=self.strategy.stats(),
             total_admissions=self.total_admissions,
             rejected_admissions=self.rejected_admissions,

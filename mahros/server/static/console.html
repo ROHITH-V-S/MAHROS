@@ -774,8 +774,10 @@ function step(m){
 
   if(m.kind==="defence"){
     if(m.upheld){
+      // Show what the hospital actually argued. "We do not run an ICU" and
+      // "our ICU is full" are different claims and must not read alike.
       turn("defence", m.defender, "STANDS BY IT",
-        `Our own capacity record supports the refusal. Things changed since that earlier admission.`);
+        esc(m.claim || "Our own record supports the refusal."));
       log(`${m.defender} justified its refusal`,"");
     }else{
       turn("struck", m.defender, "NO JUSTIFICATION",
@@ -783,6 +785,26 @@ function step(m){
       const prev=CUR&&CUR.refusals[m.defender];
       if(prev) prev.node.querySelector("span:last-child").classList.add("struck-text");
       log(`${m.defender} could not justify its refusal`,"bad");
+    }
+  }
+
+  if(m.kind==="attestation"){
+    if(m.signed){
+      // The hospital certified the contested claim under signature. Note what
+      // it did NOT disclose: no bed count, only the predicate it already
+      // asserted in public when it refused.
+      turn("defence", m.hospital, "CERTIFIES IT",
+        `Signed under our own key and co-signed by a key we do not control: `+
+        `<b>${esc(m.asserted||"no unit available")}</b> for this request. `+
+        `No bed count disclosed. Digest <code>${esc(m.digest||"")}</code>.`);
+      log(`${m.hospital} certified its refusal (${esc(m.backend||"signed")})`,"");
+    }else{
+      turn("struck", m.hospital, "WILL NOT CERTIFY",
+        `<i>${esc(m.hospital)} was asked to certify that refusal under `+
+        `signature and declined. The refusal is withdrawn.</i>`);
+      const prev=CUR&&CUR.refusals[m.hospital];
+      if(prev) prev.node.querySelector("span:last-child").classList.add("struck-text");
+      log(`${m.hospital} would not sign its refusal`,"bad");
     }
   }
 

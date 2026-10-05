@@ -44,7 +44,9 @@ from mahros.sim.scenario import SCENARIOS
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
 
-SCENARIO = "surge_scarcity"
+#: Default: the real Houston network at its observed Delta-peak load.
+#: Pass a scenario name as the second argument for the synthetic arm.
+SCENARIO = "houston_surge"
 #: Declared before the analysis. See module docstring.
 EQUIVALENCE_MARGIN = 0.02
 

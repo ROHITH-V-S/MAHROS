@@ -102,7 +102,26 @@ class ResourceLedger:
         for r, p in self.pools.items():
             self._util_samples[r].append(p.occupied / p.capacity if p.capacity else 0.0)
 
-    def mean_utilisation(self) -> dict[ResourceType, float]:
-        return {
-            r: (sum(v) / len(v) if v else 0.0) for r, v in self._util_samples.items()
-        }
+    def mean_utilisation(self, burn_in: float = 0.0) -> dict[ResourceType, float]:
+        """Mean occupancy per resource, optionally discarding a warm-up period.
+
+        `burn_in` is the leading fraction of samples to drop. The simulation
+        starts with every bed empty, so early samples describe a hospital
+        filling up rather than one running. That is harmless for comparing
+        strategies against each other -- they all warm up identically -- but it
+        would bias any comparison against *observed* occupancy, which is why
+        `experiments/validate_occupancy.py` passes a burn-in.
+        """
+        out: dict[ResourceType, float] = {}
+        for r, v in self._util_samples.items():
+            if not v:
+                out[r] = 0.0
+                continue
+            start = int(len(v) * burn_in)
+            window = v[start:] or v
+            out[r] = sum(window) / len(window)
+        return out
+
+    def occupancy_samples(self, resource: ResourceType) -> list[float]:
+        """Raw occupancy trace for one resource, for diagnostics and plots."""
+        return list(self._util_samples.get(resource, []))
