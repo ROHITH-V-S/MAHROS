@@ -492,3 +492,29 @@ def test_defence_wording_distinguishes_capability_from_capacity():
     # The old bug: capacity prose about "that earlier admission" shown for a
     # hospital that never made one.
     assert "earlier admission" not in structural.lower()
+
+
+# --------------------------------------------------------------------------- #
+# Decentralisation, measured on the message transcript
+# --------------------------------------------------------------------------- #
+
+def _bus_audit(strategy: str) -> dict:
+    sc = copy.deepcopy(SCENARIOS["houston_surge"])
+    sc.horizon_hours = 48
+    sc.seed = 42
+    r = SimulationRunner(RunConfig(scenario=sc, strategy=strategy, seed=42)).run()
+    return r.bus.audit_no_global_view(set(r.hospitals))
+
+
+def test_no_single_hospital_brokers_or_hears_most_of_the_network():
+    """MAHROS: each hospital brokers only its own patients' transfers."""
+    audit = _bus_audit("mahros")
+    assert audit["decision_concentration"] < 0.5
+    assert audit["disclosure_concentration"] < 0.5
+
+
+def test_the_measure_does_catch_a_central_registry():
+    """The same measure scores the shared registry as centralised."""
+    audit = _bus_audit("nearest")
+    assert audit["decision_concentration"] == 1.0
+    assert audit["disclosure_concentration"] == 1.0
