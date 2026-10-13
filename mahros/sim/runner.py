@@ -71,7 +71,6 @@ class RunConfig:
     llm_enabled: bool = False
     llm_arbitration: bool = False
     audit_enabled: bool = True
-    use_presidio: bool = False
     retry_interval_minutes: float = 20.0   # re-attempt a failed transfer
     sample_interval_minutes: float = 30.0
 
@@ -191,7 +190,7 @@ class SimulationRunner:
         self.fairness = FairnessLedger(
             list(self.hospitals), window=200, capacity_weights=weights
         )
-        self.privacy = PrivacyAudit(build_anonymizer(prefer_presidio=cfg.use_presidio))
+        self.privacy = PrivacyAudit(build_anonymizer())
         self.bus = MessageBus()
         self.ledger: LedgerBackend = HashChainLedger() if cfg.audit_enabled else _null_ledger()
         # Issues and verifies co-signed capacity attestations. Deterministic in

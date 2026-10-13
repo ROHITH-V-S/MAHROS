@@ -1,15 +1,13 @@
 """Privacy boundary: nothing patient-identifying leaves a hospital.
 
-Two implementations behind one interface:
+`TokenizingAnonymizer`: zero dependencies. HMAC-SHA256 pseudonymisation keyed
+per-hospital, plus regex scrubbing of the usual direct identifiers.
+Deterministic, so the same patient maps to the same token within a hospital and
+to a *different* token across hospitals (prevents cross-site linkage).
 
-  * `TokenizingAnonymizer` -- default. Zero dependencies. HMAC-SHA256
-    pseudonymisation keyed per-hospital, plus regex scrubbing of the usual
-    direct identifiers. Deterministic, so the same patient maps to the same
-    token within a hospital and to a *different* token across hospitals
-    (prevents cross-site linkage).
-
-  * `PresidioAnonymizer` -- optional, activated if `presidio-analyzer` and a
-    spaCy model are installed. Better recall on free-text clinical notes.
+An optional Microsoft Presidio backend existed in earlier versions. It was
+removed: MAHROS handles no real patient data, so a heavyweight NLP
+de-identification stack added a dependency without adding a result.
 
 Design note for the paper: the pseudonym is per-(hospital, salt) so a receiving
 hospital cannot correlate a patient across the network, but the *origin* can
@@ -81,38 +79,9 @@ class TokenizingAnonymizer:
         return clean
 
 
-class PresidioAnonymizer(TokenizingAnonymizer):
-    """Microsoft Presidio backend. Falls back to regex if a call fails."""
-
-    backend = "presidio"
-
-    def __init__(self, secret: bytes = b"mahros-dev-key-not-for-production") -> None:
-        super().__init__(secret)
-        from presidio_analyzer import AnalyzerEngine  # noqa: PLC0415
-        from presidio_anonymizer import AnonymizerEngine  # noqa: PLC0415
-
-        self._analyzer = AnalyzerEngine()
-        self._anonymizer = AnonymizerEngine()
-
-    def scrub(self, text: str) -> str:
-        if not text:
-            return text
-        try:
-            results = self._analyzer.analyze(text=text, language="en")
-            return self._anonymizer.anonymize(text=text, analyzer_results=results).text
-        except Exception:
-            return super().scrub(text)
-
-
-def build_anonymizer(prefer_presidio: bool = True, secret: bytes | None = None) -> Anonymizer:
-    """Return Presidio if importable, otherwise the tokenizing fallback."""
-    key = secret or b"mahros-dev-key-not-for-production"
-    if prefer_presidio:
-        try:
-            return PresidioAnonymizer(key)
-        except Exception:
-            pass
-    return TokenizingAnonymizer(key)
+def build_anonymizer(secret: bytes | None = None) -> Anonymizer:
+    """The privacy boundary every outbound message passes through."""
+    return TokenizingAnonymizer(secret or b"mahros-dev-key-not-for-production")
 
 
 class PrivacyAudit:

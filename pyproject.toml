@@ -22,8 +22,6 @@ dependencies = [
 demo = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 # Charts and results tables for the paper.
 analysis = ["numpy>=1.24", "pandas>=2.0", "matplotlib>=3.7"]
-# Microsoft Presidio for the privacy layer (falls back to the built-in tokenizer).
-privacy = ["presidio-analyzer>=2.2", "presidio-anonymizer>=2.2"]
 # On-chain audit against a local Hardhat/Anvil node (falls back to the hash chain).
 chain = ["web3>=6.0"]
 # Real asymmetric signatures for attested refusals. Without this the

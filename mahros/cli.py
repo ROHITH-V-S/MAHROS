@@ -48,13 +48,12 @@ def run(
     llm: bool = typer.Option(False, help="enable the LLM coordinator"),
     arbitrate: bool = typer.Option(False, help="let the LLM pick winners (ablation)"),
     no_fairness: bool = typer.Option(False, help="disable the fairness layer (ablation)"),
-    presidio: bool = typer.Option(False, help="use Presidio if installed"),
 ):
     """Run a single simulation and print the full metric set."""
     m = _run(
         scenario, strategy, seed,
         llm_enabled=llm, llm_arbitration=arbitrate,
-        fairness_enabled=not no_fairness, use_presidio=presidio,
+        fairness_enabled=not no_fairness,
     )
     _print_metrics(m)
     RESULTS.mkdir(exist_ok=True)
@@ -209,9 +208,6 @@ def doctor():
     core_ok = probe("numpy") and probe("typer")
     table.add_row("core simulation", "[green]ready[/green]" if core_ok else "[red]missing[/red]",
                   "stdlib + numpy/typer/rich")
-    table.add_row("Presidio (privacy)",
-                  "[green]installed[/green]" if probe("presidio_analyzer") else "[yellow]fallback[/yellow]",
-                  "HMAC tokenizer + regex used if absent")
     table.add_row("web3 (EVM ledger)",
                   "[green]installed[/green]" if probe("web3") else "[yellow]fallback[/yellow]",
                   "hash-chain ledger used if absent")

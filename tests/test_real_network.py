@@ -436,7 +436,7 @@ def test_zero_capacity_resources_are_not_in_the_public_directory(net):
         travel_time=lambda a, b: 20.0,
         bus=MessageBus(),
         fairness=FairnessLedger(list(hospitals)),
-        privacy=PrivacyAudit(build_anonymizer(prefer_presidio=False)),
+        privacy=PrivacyAudit(build_anonymizer()),
         weights=ScoringWeights(),
         config=CNPConfig(),
     )

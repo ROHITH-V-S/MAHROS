@@ -649,7 +649,6 @@ whenever no comparable alternative exists. All tested.
 ## Optional layers
 
 ```bash
-pip install -e ".[privacy]"     # Microsoft Presidio  (else: HMAC + regex)
 pip install -e ".[chain]"       # web3 + local Anvil   (else: hash chain)
 pip install -e ".[analysis]"    # numpy/pandas/matplotlib for plots
 pip install -e ".[verify]"      # scipy, to cross-check mahros.eval

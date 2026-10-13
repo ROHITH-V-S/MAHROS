@@ -89,7 +89,7 @@ class LiveNetwork:
         }
         self.fairness = FairnessLedger(list(self.hospitals), window=100,
                                        capacity_weights=weights)
-        self.privacy = PrivacyAudit(build_anonymizer(prefer_presidio=False))
+        self.privacy = PrivacyAudit(build_anonymizer())
         self.bus = MessageBus()
         self.ledger = HashChainLedger(block_size=8)
         self.coordinator = LLMCoordinator() if llm_enabled else None
