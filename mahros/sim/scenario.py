@@ -465,6 +465,13 @@ REAL_SCENARIOS: dict[str, ScenarioConfig] = {
                                 capacity_scale=0.72),
     # Fast real-network smoke test.
     "houston_smoke": _real("houston_smoke", "2021-01-10", horizon_days=2),
+    # Replication region: 30 real Phoenix hospitals. Weeks chosen the same way
+    # (observed network occupancy, weeks where at least 29 of 30 reported beds
+    # and 27 reported ICU). Phoenix ran cooler than Houston: 0.65-0.88.
+    "phoenix_calm": _real("phoenix_calm", "2021-03-14", metro="phoenix"),
+    "phoenix_baseline": _real("phoenix_baseline", "2021-01-10", metro="phoenix"),
+    "phoenix_typical": _real("phoenix_typical", "2022-07-17", metro="phoenix"),
+    "phoenix_surge": _real("phoenix_surge", "2024-01-14", metro="phoenix"),
 }
 
 SCENARIOS.update(REAL_SCENARIOS)
