@@ -17,6 +17,39 @@ the likely questions, the answers) and **[docs/DEMO.md](docs/DEMO.md)** (the
 
 ---
 
+## Setup
+
+**You need:** [Git](https://git-scm.com/downloads) and
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) (start it
+and wait until it says it is running).
+
+```bash
+git clone https://github.com/ROHITH-V-S/MAHROS.git
+cd MAHROS
+docker compose up -d --build
+```
+
+The first build takes a few minutes. Then open:
+
+| Address | What |
+|---|---|
+| http://localhost:8090 | MAHROS (tabs: **Live negotiation**, **Hospital data**, **Results**) |
+| http://localhost:5051 | pgAdmin, to look inside the database. Open *Servers → MAHROS database*; password if asked: `mahros-admin-local` |
+
+Stop it with `docker compose down`. Start it again with `docker compose up -d`
+(your data is kept). `docker compose down -v` also wipes the database.
+
+**If something goes wrong**
+
+- *Port already in use:* copy `.env.example` to `.env` and change
+  `MAHROS_APP_PORT` / `MAHROS_PGADMIN_PORT` / `MAHROS_DB_PORT`.
+- *The top bar says "not saving: no database":* run `docker compose logs app`.
+- *No Docker:* `pip install -e ".[demo,db]"` then `python -m mahros.server`
+  and open http://127.0.0.1:8000. It works, but nothing is saved and the
+  Hospital data tab is empty.
+
+---
+
 ## What is real, and what is simulated
 
 | | Source | Status |
@@ -33,35 +66,6 @@ the likely questions, the answers) and **[docs/DEMO.md](docs/DEMO.md)** (the
 Every field is labelled observed / derived / assumed in
 [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md) (generated from the code),
 and every modelling choice is in [docs/MODEL_ASSUMPTIONS.md](docs/MODEL_ASSUMPTIONS.md).
-
----
-
-## Run it
-
-### With the database (recommended; what reviewers should see)
-
-```bash
-docker compose up -d --build
-```
-
-| Open | What |
-|---|---|
-| http://localhost:8090 | MAHROS: **Live negotiation**, **Hospital data**, **Results** |
-| http://localhost:5051 | pgAdmin: every table (server "MAHROS database", opens without a password) |
-
-The first start creates the schema and loads the real data (about 2 seconds).
-Ports are deliberately unusual so the stack does not collide with other
-projects; change them in `.env` (copy `.env.example`). `docker compose down`
-stops it; `docker compose down -v` also deletes the database.
-
-### Without Docker
-
-```bash
-pip install -e ".[demo,db]"
-python -m mahros.server            # http://127.0.0.1:8000, in memory: nothing saved
-```
-
-The top bar always says whether changes are **saved to PostgreSQL** or not.
 
 ---
 
@@ -182,7 +186,13 @@ Every number below is generated from `results/*.json` by
 [docs/RESULTS.md](docs/RESULTS.md). Do not edit it by hand.
 
 <!-- results:start -->
-*(not built yet: run the experiments, then `python experiments/build_results.py`)*
+- MAHROS places 13.0 percentage points more patients in time than a phone tree given perfect information (p < 0.0001).
+- Against optimisers that see every hospital's true occupancy: -0.3 pts vs central greedy, +0.4 pts vs batched optimal; equivalent within ±2 points: yes / yes.
+- On an honest network a shared registry ties MAHROS (-0.0 pts, Holm p = 0.8980).
+- Simulated occupancy is within 3.8 points of what Houston's hospitals reported (R² 0.95), and 3.0 points for Phoenix (R² 0.97), which was not tuned.
+- 5.4% of Houston's weekly capacity reports and 0.2% of Phoenix's are impossible or look copied (20 of 27 and 3 of 30 hospitals have at least one report that cannot be right).
+
+Full tables, and every caveat: [docs/RESULTS.md](docs/RESULTS.md).
 <!-- results:end -->
 
 ### Say these before a reviewer does
@@ -298,7 +308,7 @@ mahros/
 experiments/     every result (see above)
 tests/           pytest suite, API smoke test, UI check
 docs/            PANEL_GUIDE, DEMO, RESULTS (generated), DATA_PROVENANCE
-                 (generated), MODEL_ASSUMPTIONS, REVIEW_PANEL_REPORT
+                 (generated), MODEL_ASSUMPTIONS
 docker-compose.yml, Dockerfile, docker/pgadmin/
 ```
 

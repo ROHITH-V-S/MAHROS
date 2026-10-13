@@ -78,7 +78,11 @@ hash-chained audit logs.
 ## 5. The numbers to remember
 
 <!-- results:panel:start -->
-*(not built yet: run the experiments, then `python experiments/build_results.py`)*
+- MAHROS places 13.0 percentage points more patients in time than a phone tree given perfect information (p < 0.0001).
+- Against optimisers that see every hospital's true occupancy: -0.3 pts vs central greedy, +0.4 pts vs batched optimal; equivalent within ±2 points: yes / yes.
+- On an honest network a shared registry ties MAHROS (-0.0 pts, Holm p = 0.8980).
+- Simulated occupancy is within 3.8 points of what Houston's hospitals reported (R² 0.95), and 3.0 points for Phoenix (R² 0.97), which was not tuned.
+- 5.4% of Houston's weekly capacity reports and 0.2% of Phoenix's are impossible or look copied (20 of 27 and 3 of 30 hospitals have at least one report that cannot be right).
 <!-- results:end -->
 
 Full tables: [RESULTS.md](RESULTS.md).
