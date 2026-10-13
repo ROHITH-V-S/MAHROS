@@ -53,15 +53,18 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGADMIN_DEFAULT_EMAIL: reviewer@mahros.local
+      PGADMIN_DEFAULT_EMAIL: reviewer@example.com
       PGADMIN_DEFAULT_PASSWORD: ${MAHROS_PGADMIN_PASSWORD:-mahros-pgadmin-local}
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    # libpq ignores a password file other users can read, and files mounted
+    # from Windows always look that way. Copy it to a private one first.
+    entrypoint: ["/bin/sh", "-c", "cp /pgpass.src /var/lib/pgadmin/pgpass && chmod 600 /var/lib/pgadmin/pgpass && exec /entrypoint.sh"]
     ports:
       - "${MAHROS_PGADMIN_PORT:-5051}:80"
     volumes:
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
-      - ./docker/pgadmin/pgpass:/pgpass:ro
+      - ./docker/pgadmin/pgpass:/pgpass.src:ro
 
 volumes:
   pgdata:
