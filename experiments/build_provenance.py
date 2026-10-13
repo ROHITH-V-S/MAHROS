@@ -129,17 +129,36 @@ def main(metro: str = "houston") -> int:
     add("")
     add("### What the assumed rows mean")
     add("")
-    add("The HHS dataset reports beds, ICU beds and occupancy. It reports "
-        "**no** step-down beds, operating-room slots, ventilators or cath labs, "
-        "and **no** specialty other than paediatric intensive care. Those are "
-        "generated from declared ratios.")
+    add("No public dataset reports step-down beds, operating-room slots or "
+        "ventilators per hospital, so those three are generated from declared "
+        "ratios. Everything that decides *who can take a patient* is observed: "
+        "beds and ICU beds from HHS, specialties and cath-lab rooms from the "
+        "CMS Provider of Services file, road times from OSRM.")
     add("")
-    add("The honest consequence: MAHROS's *capability* model — which hospital "
-        "can treat what — is assumed rather than observed, except for "
-        "paediatrics. Since capability is what makes an escalation transfer "
-        "necessary at all, this is the most important remaining gap. Closing it "
-        "means joining CMS Care Compare on the CCN, which every facility record "
-        "already carries.")
+    add("### Which patients need moving: real case-mix")
+    add("")
+    add("What share of transfer requests need each resource (cath lab, neuro "
+        "ICU, trauma theatre...) is taken from **37,439 real interhospital "
+        "transfers** in California hospital discharge data for 2021 (HCAI, "
+        "CC-BY; `experiments/fetch_transfer_mix.py`). Mapping each diagnostic "
+        "group to a resource, and splitting circulatory transfers 50/50 "
+        "between cath lab and cardiac ICU, are author decisions stated in "
+        "`mahros/calibration/case_mix.py`.")
+    add("")
+    from mahros.calibration.case_mix import observed_weights
+    add("| Profile | Share of requests |")
+    add("|---|---|")
+    for k, v in sorted(observed_weights().items(), key=lambda kv: -kv[1]):
+        add(f"| `{k}` | {v:.1%} |")
+    add("")
+    add("### The live database starts from the same data")
+    add("")
+    add("The live console's default data (what *Restore real data* returns to) "
+        "and the experiments' warm start both fill each ward, step-down and ICU "
+        "pool to what the hospital reported in the week, using one rule "
+        "(`mahros/sim/warm_start.py`). ICU occupancy is observed; ward and "
+        "step-down split the reported inpatient count (derived); OR, ventilator "
+        "and cath-lab use is not reported anywhere and is labelled assumed.")
     add("")
 
     # -- the network ------------------------------------------------------ #
@@ -221,8 +240,13 @@ def main(metro: str = "houston") -> int:
         "length-of-stay distributions are modelling assumptions. Length of stay "
         "is scaled to a typical US acute figure rather than measured; "
         "calibrating it against HCUP or MIMIC-IV is follow-on work.")
-    add("7. **Travel times are straight-line**, derived from real coordinates "
-        "with a fixed handover overhead, not road-network routing.")
+    add("7. **Road times are free-flow** (OSRM over OpenStreetMap): no live "
+        "traffic, no time of day. The 12-minute handover added to every "
+        "journey is assumed and swept.")
+    add("8. **The case-mix is Californian, the network is Texan.** No public "
+        "transfer-by-diagnosis data exists for Texas. California 2021 is the "
+        "closest real source; it also shows only 1.6% of discharges were "
+        "transfers, below the 4.5% the escalation rate is calibrated to.")
     add("")
     add("The claim this data *does* support is narrow and worth stating "
         "exactly: **the network's capacity, geography and load are real, and "

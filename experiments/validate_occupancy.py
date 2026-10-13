@@ -61,8 +61,11 @@ INPATIENT = (ResourceType.WARD_BED, ResourceType.HDU_BED, ResourceType.ICU_BED)
 def simulated_occupancy(scenario_name: str, seed: int) -> dict[str, dict[str, float]]:
     sc = copy.deepcopy(SCENARIOS[scenario_name])
     sc.seed = seed
+    # Cold start, always. The experiments warm-start at the reported
+    # occupancy; validating a warm-started run against that same occupancy
+    # would partly measure where it was put, not where the model goes.
     result = SimulationRunner(
-        RunConfig(scenario=sc, strategy="mahros", seed=seed)).run()
+        RunConfig(scenario=sc, strategy="mahros", seed=seed, warm_start=False)).run()
 
     out: dict[str, dict[str, float]] = {}
     for hid, hosp in result.hospitals.items():
