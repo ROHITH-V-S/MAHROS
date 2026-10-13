@@ -37,16 +37,38 @@ RESULTS = ROOT / "results"
 SCENARIO = "houston_surge"
 
 
-def run(strategy: str, seed: int, **kw) -> float:
+def run(strategy: str, seed: int, scen: dict | None = None, **kw) -> float:
     scenario = copy.deepcopy(SCENARIOS[SCENARIO])
     scenario.seed = seed
+    for key, value in (scen or {}).items():
+        setattr(scenario, key, value)
     result = SimulationRunner(
         RunConfig(scenario=scenario, strategy=strategy, seed=seed, **kw)).run()
     return M.compute(result).success_rate
 
 
-def mean(strategy: str, seeds: list[int], **kw) -> float:
-    return st.fmean(run(strategy, s, **kw) for s in seeds)
+def mean(strategy: str, seeds: list[int], scen: dict | None = None, **kw) -> float:
+    return st.fmean(run(strategy, s, scen, **kw) for s in seeds)
+
+
+def ranking_sweep(title: str, key: str, values, apply, flips: list, out: dict,
+                  seeds: list[int]) -> None:
+    """MAHROS vs the phone tree at each value; `apply(v)` sets it, returns undo."""
+    section(title)
+    print(f"{'value':>10} {'MAHROS':>9} {'phone':>9} {'MAHROS wins':>13}")
+    rows = {}
+    for v in values:
+        undo = apply(v)
+        try:
+            m, ph = mean("mahros", seeds), mean("phone", seeds)
+        finally:
+            undo()
+        rows[str(v)] = {"mahros": m, "phone": ph}
+        holds = m > ph
+        print(f"{v:>10} {m:>9.1%} {ph:>9.1%} {('yes' if holds else 'NO - FLIPPED'):>13}")
+        if not holds:
+            flips.append(f"{key} {v}")
+    out["sweeps"][key] = rows
 
 
 def section(title: str) -> None:
@@ -171,6 +193,48 @@ def main(n_seeds: int = 8) -> int:
             if on < off:
                 flips.append(f"argumentation harmful at threshold={threshold}, shirk={shirk}")
     out["sweeps"]["adversary_strength"] = adversary
+
+    # -- 7-10. the remaining unsourced or mapped values -------------------- #
+    from mahros.calibration import case_mix, routing
+    from mahros.sim import scenario as scenario_mod
+
+    def set_escalation_delay(mean_minutes):
+        orig = scenario_mod.PatientGenerator.escalation_delay
+        import math as _m
+        scenario_mod.PatientGenerator.escalation_delay = (
+            lambda self: max(15.0, self.rng.lognormvariate(_m.log(mean_minutes), 0.9)))
+        return lambda: setattr(scenario_mod.PatientGenerator, "escalation_delay", orig)
+    ranking_sweep("7. Escalation delay, median minutes  (unsourced; 420 = 7 h)",
+                  "escalation_delay", (240, 420, 720), set_escalation_delay, flips, out, seeds)
+
+    def set_handover(minutes):
+        orig = routing.road_travel_minutes
+        def patched(metro):
+            base = orig(metro)
+            return None if base is None else {
+                k: v - routing.HANDOVER_MINUTES + minutes for k, v in base.items()}
+        # scenario.py imported the function by name, so patch it there too.
+        routing.road_travel_minutes = scenario_mod.road_travel_minutes = patched
+
+        def undo():
+            routing.road_travel_minutes = scenario_mod.road_travel_minutes = orig
+        return undo
+    ranking_sweep("8. Handover minutes added to every journey  (unsourced; 12)",
+                  "handover_minutes", (8, 12, 20), set_handover, flips, out, seeds)
+
+    def set_volume(prob):
+        orig = SCENARIOS[SCENARIO].escalation_prob
+        SCENARIOS[SCENARIO].escalation_prob = prob
+        return lambda: setattr(SCENARIOS[SCENARIO], "escalation_prob", orig)
+    ranking_sweep("9. Transfer volume: escalation probability  (0.14 in use; California implies lower)",
+                  "escalation_prob", (0.07, 0.14, 0.21), set_volume, flips, out, seeds)
+
+    def set_cath_share(share):
+        orig = case_mix.CARDIAC_CATH_SHARE
+        case_mix.CARDIAC_CATH_SHARE = share
+        return lambda: setattr(case_mix, "CARDIAC_CATH_SHARE", orig)
+    ranking_sweep("10. Circulatory transfers needing a cath lab  (mapping decision; 0.5)",
+                  "cardiac_cath_share", (0.25, 0.5, 0.75), set_cath_share, flips, out, seeds)
 
     # -- verdict ----------------------------------------------------------- #
     section("VERDICT")

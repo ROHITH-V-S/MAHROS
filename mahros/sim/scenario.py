@@ -137,11 +137,16 @@ def build_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
     """
     if cfg.is_real:
         from .real_network import build_real_network
-        return build_real_network(
+        configs = build_real_network(
             metro=cfg.real_metro,
             week=cfg.real_week,
             capacity_scale=cfg.capacity_scale,
         ).configs
+        # The scenario's value used to be ignored here: real hospitals kept
+        # HospitalConfig's default (0.14) while the scenario declared 0.18.
+        for c in configs:
+            c.escalation_prob = cfg.escalation_prob
+        return configs
     return _build_synthetic_network(cfg)
 
 
@@ -430,7 +435,7 @@ SCENARIOS: dict[str, ScenarioConfig] = {
 
 def _real(name: str, week: str, horizon_days: float = 14,
           capacity_scale: float = 1.0, metro: str = "houston",
-          escalation_prob: float = 0.18) -> ScenarioConfig:
+          escalation_prob: float = 0.14) -> ScenarioConfig:
     from .real_network import LOS_SCALE
     return ScenarioConfig(
         name=name, real_metro=metro, real_week=week,
