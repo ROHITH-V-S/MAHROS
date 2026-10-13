@@ -223,13 +223,16 @@ def main(n_seeds: int = 8) -> None:
     led = detail.ledger
     before = led.verify()
     forged = None
+    # Forge the first agreement. Blocks also hold refusals, which have no
+    # receiver, so the first entry is not necessarily an agreement.
     for block in led.chain[1:]:
-        if block.entries:
+        entry = next((e for e in block.entries if "receiver" in e), None)
+        if entry is not None:
             forged = {"block": block.index,
                       "field": "receiver",
-                      "was": block.entries[0]["receiver"],
+                      "was": entry["receiver"],
                       "now": "H99_FORGED"}
-            block.entries[0]["receiver"] = "H99_FORGED"
+            entry["receiver"] = "H99_FORGED"
             break
     after = led.verify()
     out["ledger_demo"] = {
