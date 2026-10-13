@@ -73,6 +73,10 @@ class RunConfig:
     audit_enabled: bool = True
     retry_interval_minutes: float = 20.0   # re-attempt a failed transfer
     sample_interval_minutes: float = 30.0
+    #: Real networks only: start every bed pool at the occupancy the hospital
+    #: reported that week, instead of empty. Synthetic networks always start
+    #: empty, so their results stay bit-identical.
+    warm_start: bool = True
 
     # -- who is being straight with whom ---------------------------------- #
     #: Fraction of hospitals that will fabricate a refusal to dodge a transfer
@@ -376,11 +380,52 @@ class SimulationRunner:
                     pass  # hold lapsed; the CARE_START handler will renegotiate
         self.sim.schedule(self.cfg.sample_interval_minutes, SAMPLE, None)
 
+    def _warm_start(self) -> int:
+        """Fill ward, step-down and ICU beds to the reported week; return patients placed.
+
+        Each patient gets a remaining stay drawn from the length-biased stay
+        distribution (see `mahros.sim.warm_start`). A separate random stream is
+        used so the arrival and escalation streams are the ones a cold start
+        would have drawn.
+        """
+        from .real_network import POOL_MEAN_LOS_MINUTES
+        from .scenario import real_observed
+        from .warm_start import WARM_POOLS, default_occupancy, residual_stay
+
+        observed = real_observed(self.scenario)
+        rng = random.Random(self.cfg.seed + 7_777)
+        scale = self.scenario.capacity_scale
+        placed = 0
+        for hid, hosp in self.hospitals.items():
+            o = observed.get(hid)
+            if not o:
+                continue
+            used = o.get("inpatient_beds_used")
+            used = None if used is None or used != used else used * scale
+            icu_used = o.get("adult_icu_beds_used")
+            icu_used = None if icu_used is None else icu_used * scale
+            occupancy = default_occupancy(hosp.cfg.capacities, used, icu_used,
+                                          o["inpatient_beds"] * scale)
+            for resource in WARM_POOLS:
+                pool = hosp.resources.pool(resource)
+                if pool is None or resource not in occupancy:
+                    continue
+                for _ in range(min(occupancy[resource][0], pool.capacity)):
+                    pool.occupy()
+                    placed += 1
+                    self.sim.schedule(
+                        residual_stay(rng, POOL_MEAN_LOS_MINUTES[resource],
+                                      self.scenario.los_scale),
+                        DISCHARGE, {"hospital": hid, "resource": resource})
+        return placed
+
     # -- entry point ------------------------------------------------------- #
     def run(self) -> RunResult:
         import time
         t0 = time.perf_counter()
 
+        if self.cfg.warm_start and self.scenario.is_real:
+            self.warm_started = self._warm_start()
         for hid, hosp in self.hospitals.items():
             self.sim.schedule(
                 self.gen.arrival_gap(hosp.cfg.base_arrival_rate, 0.0),

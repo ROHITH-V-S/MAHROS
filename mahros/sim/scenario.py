@@ -141,6 +141,15 @@ def build_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
     return _build_synthetic_network(cfg)
 
 
+def real_observed(cfg: ScenarioConfig) -> dict[str, dict[str, float]]:
+    """What each real hospital reported in the scenario's week (empty if synthetic)."""
+    if not cfg.is_real:
+        return {}
+    from .real_network import build_real_network
+    return build_real_network(metro=cfg.real_metro, week=cfg.real_week,
+                              capacity_scale=cfg.capacity_scale).observed
+
+
 def _build_synthetic_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
     rng = random.Random(cfg.seed)
     configs: list[HospitalConfig] = []

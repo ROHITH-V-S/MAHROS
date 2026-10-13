@@ -418,6 +418,7 @@ def build_real_network(
             continue
         icu = _nearest_reported(fac, "icu", idx) or 0.0
         used = _nearest_reported(fac, "used", idx)
+        icu_used = _nearest_reported(fac, "icu_used", idx)
         picu = _nearest_reported(fac, "picu", idx) or 0.0
 
         if _series_at(fac, "beds", idx) is None:
@@ -549,6 +550,7 @@ def build_real_network(
             #: What the facility actually reported. Never capped.
             "occupancy": reported_occ,
             "adult_icu_beds": icu,
+            "adult_icu_beds_used": icu_used,
             "paediatric_icu_beds": picu,
             "km_from_centroid": fac["km_from_centroid"],
         }

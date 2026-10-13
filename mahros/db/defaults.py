@@ -20,6 +20,7 @@ from ..calibration.facilities import load_vendor
 from ..calibration.routing import load_routes
 from ..core.types import ResourceType
 from ..sim.real_network import _nearest_reported, build_real_network
+from ..sim.warm_start import default_occupancy
 
 HHS = "HHS/CDC NHSN facility report"
 POS = "CMS Provider of Services"
@@ -48,60 +49,6 @@ def _capacity_provenance(kind: ResourceType, from_pos: bool) -> tuple[str, str]:
             ("observed", f"{POS}: cardiac catheterisation room count") if from_pos
             else ("assumed", "tier guess; no POS record")),
     }[kind]
-
-
-def default_occupancy(caps: dict[ResourceType, int], used: float | None,
-                      icu_used: float | None, beds: float,
-                      ) -> dict[ResourceType, tuple[int, str, str]]:
-    """Occupancy per pool in the reference week: (occupied, provenance, source).
-
-    ICU is reported directly. Ward and step-down share what is left of the
-    inpatient count, split by size. Nothing public reports OR, ventilator or
-    cath-lab use, so those follow the hospital's reported occupancy rate and
-    are labelled assumed.
-    """
-    inpatient_rate = min(1.0, (used / beds)) if (used is not None and beds) else 0.70
-    icu_cap = caps.get(ResourceType.ICU_BED, 0)
-    out: dict[ResourceType, tuple[int, str, str]] = {}
-
-    if icu_used is not None and icu_cap:
-        icu_occ = min(icu_cap, max(0, round(icu_used)))
-        icu_rate = icu_occ / icu_cap
-        out[ResourceType.ICU_BED] = (icu_occ, "observed", f"{HHS}: staffed adult ICU beds occupied")
-    else:
-        icu_occ = round(icu_cap * inpatient_rate)
-        icu_rate = inpatient_rate
-        out[ResourceType.ICU_BED] = (icu_occ, "derived",
-                                     f"ICU not reported; {HHS} inpatient occupancy rate applied")
-
-    ward_cap = caps.get(ResourceType.WARD_BED, 0)
-    hdu_cap = caps.get(ResourceType.HDU_BED, 0)
-    if used is not None:
-        rest = max(0.0, used - (icu_used if icu_used is not None else icu_occ))
-        share = ward_cap / (ward_cap + hdu_cap) if (ward_cap + hdu_cap) else 1.0
-        ward_occ = min(ward_cap, round(rest * share))
-        hdu_occ = min(hdu_cap, round(rest * (1 - share)))
-        src = f"{HHS}: inpatient beds occupied minus ICU, split by pool size"
-        out[ResourceType.WARD_BED] = (ward_occ, "derived", src)
-        if hdu_cap:
-            out[ResourceType.HDU_BED] = (hdu_occ, "derived", src)
-    else:
-        out[ResourceType.WARD_BED] = (round(ward_cap * 0.70), "assumed",
-                                      "occupancy not reported; network mean 0.70")
-        if hdu_cap:
-            out[ResourceType.HDU_BED] = (round(hdu_cap * 0.70), "assumed",
-                                         "occupancy not reported; network mean 0.70")
-
-    for kind, rate, label in (
-        (ResourceType.OR_SLOT, inpatient_rate, "inpatient"),
-        (ResourceType.CATH_LAB, inpatient_rate, "inpatient"),
-        (ResourceType.VENTILATOR, icu_rate, "ICU"),
-    ):
-        cap = caps.get(kind, 0)
-        if cap:
-            out[kind] = (min(cap, round(cap * rate)), "assumed",
-                         f"no public data on use; set to the hospital's {label} occupancy rate")
-    return out
 
 
 def build_reference(metro: str = "houston", week: str | None = None) -> ReferenceData:
