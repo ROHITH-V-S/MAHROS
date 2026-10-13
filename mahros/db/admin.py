@@ -57,11 +57,11 @@ def ensure_app_role(conn: psycopg.Connection, password: str) -> None:
 
 def load_reference(conn: psycopg.Connection, metro: str = DEFAULT_METRO,
                    week: str = DEFAULT_WEEK) -> dict[str, int]:
-    """Load the real data once. Skipped if hospitals are already there."""
+    """Load the real data once; on later runs, refresh the derived defaults only."""
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) AS n FROM hospitals")
         if cur.fetchone()["n"]:
-            return {}
+            return refresh_defaults(conn, metro, week)
         ref = build_reference(metro, week)
         cur.execute("SELECT set_config('mahros.loading_reference', 'on', true)")
         cur.execute("SELECT set_config('mahros.actor', 'system:data-loader', true)")
@@ -94,6 +94,43 @@ def load_reference(conn: psycopg.Connection, metro: str = DEFAULT_METRO,
         return {"hospitals": len(ref.hospitals), "capabilities": len(ref.capabilities),
                 "weekly_reports": len(ref.weekly_reports),
                 "travel_times": len(ref.travel_times), "resources": len(ref.resources)}
+
+
+def refresh_defaults(conn: psycopg.Connection, metro: str = DEFAULT_METRO,
+                     week: str = DEFAULT_WEEK) -> dict[str, int]:
+    """Re-derive each pool's capacity and default occupancy from the source.
+
+    The HHS rows never change, but the rule that turns them into pool defaults
+    can (e.g. procedure rooms now start empty). Only this loader may write
+    those locked columns; each change is audited as system:data-loader. Live
+    occupancy is clamped to a lowered capacity and otherwise left alone.
+    """
+    ref = build_reference(metro, week)
+    changed = 0
+    with conn.cursor() as cur:
+        cur.execute("SELECT set_config('mahros.loading_reference', 'on', true)")
+        cur.execute("SELECT set_config('mahros.actor', 'system:data-loader', true)")
+        for r in ref.resources:
+            cur.execute("""
+                UPDATE resources SET capacity = %(capacity)s,
+                    capacity_provenance = %(capacity_provenance)s,
+                    capacity_source = %(capacity_source)s,
+                    default_occupied = %(default_occupied)s,
+                    default_provenance = %(default_provenance)s,
+                    default_source = %(default_source)s,
+                    occupied = LEAST(occupied, %(capacity)s)
+                WHERE hospital_id = %(hospital_id)s AND kind = %(kind)s
+                  AND (capacity, capacity_provenance, capacity_source, default_occupied,
+                       default_provenance, default_source)
+                      IS DISTINCT FROM (%(capacity)s, %(capacity_provenance)s,
+                                        %(capacity_source)s, %(default_occupied)s,
+                                        %(default_provenance)s, %(default_source)s)""", r)
+            changed += cur.rowcount
+        if changed:
+            cur.execute("INSERT INTO system_events (level, source, event_type, details) "
+                        "VALUES ('info', 'loader', 'defaults_refreshed', %s)",
+                        (Jsonb({"pools_changed": changed}),))
+    return {"defaults_refreshed": changed} if changed else {}
 
 
 def init_database(admin_url: str | None = None, app_password: str | None = None,

@@ -354,3 +354,19 @@ def test_bottlenecks_report_unmet_needs_and_fullest_pools(store):
     b = store.bottlenecks()
     assert b["failed"] >= 1 and "icu bed" in b["headline"]
     assert b["pools"][0]["kind"] == "icu_bed" and b["pools"][0]["occupancy"] == 1.0
+
+
+def test_loader_refreshes_stale_defaults_and_audits_it(urls, store, admin):
+    """Only the loader may rewrite locked defaults; init re-derives them."""
+    from mahros.db.admin import init_database
+    admin.execute("BEGIN")
+    admin.execute("SELECT set_config('mahros.loading_reference', 'on', true)")
+    admin.execute("UPDATE resources SET default_occupied = 0 "
+                  "WHERE hospital_id = '450068' AND kind = 'icu_bed'")
+    admin.execute("COMMIT")
+    out = init_database(urls["admin"], APP_PASSWORD)
+    assert out["loaded"] == {"defaults_refreshed": 1}
+    assert _pool(store, "450068", "icu_bed")["default_occupied"] == 119
+    row = store.audit_rows(5, table="resources")[0]
+    assert row["actor"] == "system:data-loader"
+    assert row["after"]["default_occupied"] == 119

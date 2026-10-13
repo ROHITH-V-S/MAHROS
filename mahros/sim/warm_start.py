@@ -42,8 +42,7 @@ def default_occupancy(caps: dict[ResourceType, int], used: float | None,
 
     ICU is reported directly. Ward and step-down share what is left of the
     inpatient count, split by size. Nothing public reports OR, ventilator or
-    cath-lab use, so those follow the hospital's reported occupancy rate and
-    are labelled assumed.
+    cath-lab use; those start empty and are labelled assumed.
     """
     inpatient_rate = min(1.0, (used / beds)) if (used is not None and beds) else 0.70
     icu_cap = caps.get(ResourceType.ICU_BED, 0)
@@ -51,11 +50,9 @@ def default_occupancy(caps: dict[ResourceType, int], used: float | None,
 
     if icu_used is not None and icu_cap:
         icu_occ = min(icu_cap, max(0, round(icu_used)))
-        icu_rate = icu_occ / icu_cap
         out[ResourceType.ICU_BED] = (icu_occ, "observed", f"{HHS}: staffed adult ICU beds occupied")
     else:
         icu_occ = round(icu_cap * inpatient_rate)
-        icu_rate = inpatient_rate
         out[ResourceType.ICU_BED] = (icu_occ, "derived",
                                      f"ICU not reported; {HHS} inpatient occupancy rate applied")
 
@@ -77,15 +74,15 @@ def default_occupancy(caps: dict[ResourceType, int], used: float | None,
             out[ResourceType.HDU_BED] = (round(hdu_cap * 0.70), "assumed",
                                          "occupancy not reported; network mean 0.70")
 
-    for kind, rate, label in (
-        (ResourceType.OR_SLOT, inpatient_rate, "inpatient"),
-        (ResourceType.CATH_LAB, inpatient_rate, "inpatient"),
-        (ResourceType.VENTILATOR, icu_rate, "ICU"),
-    ):
-        cap = caps.get(kind, 0)
-        if cap:
-            out[kind] = (min(cap, round(cap * rate)), "assumed",
-                         f"no public data on use; set to the hospital's {label} occupancy rate")
+    # OR slots, cath labs and ventilators: nothing public reports their use,
+    # and procedure rooms turn over in hours, not days. They start empty, as
+    # they do in the simulation, so the console and the experiments agree.
+    # (Filling them at the bed occupancy rate showed 21 of 24 cath labs as
+    # full, which is not what anyone observed.)
+    for kind in (ResourceType.OR_SLOT, ResourceType.CATH_LAB, ResourceType.VENTILATOR):
+        if caps.get(kind, 0):
+            out[kind] = (0, "assumed",
+                         "no public data on use; starts empty, as in the simulation")
     return out
 
 
