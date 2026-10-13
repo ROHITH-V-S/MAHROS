@@ -35,6 +35,7 @@
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 html,body{margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button,input,select{font-family:inherit;font-size:inherit;color:inherit}
@@ -219,6 +220,61 @@ table.rank tr.win td{background:var(--good-soft);font-weight:650}
 .hosp-row button{font-size:11px;padding:3px 8px;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;font-weight:650}
 .hosp-row button[data-on="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
 #view-results{padding:0}
+
+/* who is acting + database status */
+.who-box{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600}
+.who-box input{width:118px;padding:4px 8px;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);font-size:12.5px}
+
+/* ===== Hospital data tab ===== */
+.data-wrap{max-width:1500px;margin:0 auto;padding:20px;display:grid;gap:16px}
+.data-top{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+@media (max-width:1080px){.data-top{grid-template-columns:1fr}}
+.lock{font-size:11px;opacity:.75}
+.legend-row{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin:8px 0 0}
+.legend-row b{font-weight:650}
+.btn.danger{border-color:var(--crit);color:var(--crit)}
+.btn.danger[data-armed="true"]{background:var(--crit);color:#fff}
+.btn.small{width:auto;padding:6px 11px;font-size:12.5px;border-radius:8px}
+.btn.primary.small{font-size:12.5px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input[type=search]{flex:1;min-width:180px;padding:8px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2)}
+.scroll-x{overflow-x:auto}
+table.hd{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1120px}
+table.hd th{text-align:left;font-weight:650;color:var(--muted);font-size:11.5px;padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel-2);position:sticky;top:0}
+table.hd td{padding:9px 8px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.hd tr.dirty td{background:var(--brand-soft)}
+table.hd tr.hist td{background:var(--panel-2)}
+.hname{font-weight:650;line-height:1.3}
+.hmeta{font-size:11.5px;color:var(--muted)}
+.spec{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:99px;background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2);margin:3px 3px 0 0}
+.cell-pool{white-space:nowrap}
+.cell-pool input{width:58px;padding:4px 6px;border-radius:7px;border:1px solid var(--line);background:var(--panel);font-family:var(--mono);font-size:12px}
+.cell-pool input:focus{outline:2px solid var(--brand);outline-offset:0}
+.cell-pool .cap{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.cell-pool .real{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+.edited{display:inline-block;font-size:10px;font-weight:700;padding:0 5px;border-radius:99px;background:var(--warn-soft);color:var(--warn);margin-left:3px}
+.cell-act{white-space:nowrap}
+.cell-act .btn{margin:0 4px 4px 0}
+.row-msg{display:block;font-size:11.5px;margin-top:3px}
+.row-msg.bad{color:var(--crit)}
+.row-msg.ok{color:var(--good)}
+select.pol{padding:5px 7px;border-radius:7px;border:1px solid var(--line);background:var(--panel);font-size:12px;max-width:150px}
+.hist-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:900px){.hist-grid{grid-template-columns:1fr}}
+.hist-list{max-height:240px;overflow:auto;font-size:12px}
+.hist-list .hrow{padding:5px 0;border-bottom:1px solid var(--line-soft)}
+.hist-list .when{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.sev{display:inline-block;font-size:10px;font-weight:700;padding:0 6px;border-radius:99px}
+.sev.red{background:var(--crit-soft);color:var(--crit)}
+.sev.amber{background:var(--warn-soft);color:var(--warn)}
+table.mini{width:100%;border-collapse:collapse;font-size:12px}
+table.mini th{text-align:left;color:var(--muted);font-weight:650;font-size:11px;padding:5px 6px;border-bottom:1px solid var(--line)}
+table.mini td{padding:5px 6px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.mini td.mono{font-size:11px}
+.linkish{background:none;border:0;color:var(--brand);cursor:pointer;font-weight:650;padding:0;font-size:12px}
+.status-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;margin-bottom:6px}
+.offline{padding:28px;text-align:center;color:var(--ink-2)}
+.offline code{background:var(--panel-2);padding:2px 6px;border-radius:6px}
 #dash{width:100%;height:calc(100vh - 56px);border:0;display:block}
 </style>
 </head>
@@ -227,6 +283,7 @@ table.rank tr.win td{background:var(--good-soft);font-weight:650}
   <div class="mark"><span class="dot" id="conn"></span>MAHROS</div>
   <nav class="tabs" id="tabs">
     <button data-view="live" aria-pressed="true">Live negotiation</button>
+    <button data-view="data" aria-pressed="false">Hospital data</button>
     <button data-view="results" aria-pressed="false">Results</button>
   </nav>
   <span class="pill mono" id="clock">—</span>
@@ -235,8 +292,92 @@ table.rank tr.win td{background:var(--good-soft);font-weight:650}
   <span class="pill ok" id="p-caught">0 refusals overruled</span>
   <span class="pill ok" id="p-false">0 wrongly accused</span>
   <span class="pill ok adv" id="p-ledger">records intact</span>
+  <span class="pill" id="p-db" title="Where changes are saved">—</span>
+  <label class="who-box" title="Recorded with every change you make">Your name
+    <input type="text" id="actor" maxlength="40" placeholder="reviewer"></label>
   <button class="mini-btn" id="mode" data-on="false">Show detail</button>
   <button class="mini-btn" id="theme">theme</button>
+</div></div>
+
+<div id="view-data" hidden><div class="data-wrap">
+
+  <div class="data-top">
+    <div class="card">
+      <div class="card-h"><h3>Hospital data</h3>
+        <div class="spacer"></div><span class="note" id="hd-epoch">—</span></div>
+      <div class="card-b">
+        <p class="sub" style="margin:0">
+          The 27 real Houston hospitals as the live system sees them. Change a hospital's
+          <b>occupancy</b> or <b>behaviour</b> here and press <b>Save</b>: the database is updated,
+          the change is recorded with your name, and the very next transfer uses it.
+        </p>
+        <div class="legend-row">
+          <span><span class="lock">&#128274;</span> <b>Locked</b>: real data (bed capacity, specialties). The database refuses changes.</span>
+          <span><span class="edited">edited</span> differs from what the hospital really reported</span>
+        </div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn danger small" id="hd-restore-all" data-armed="false">Restore all to real data</button>
+          <button class="btn small" id="hd-refresh">Refresh</button>
+          <span class="sub" id="hd-msg"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Are the records intact?</h3></div>
+      <div class="card-b">
+        <div class="status-line"><span class="pill" id="hd-audit">—</span>
+          <span class="sub" id="hd-audit-note"></span></div>
+        <div class="status-line"><span class="pill" id="hd-ledger">—</span>
+          <span class="sub" id="hd-ledger-note"></span></div>
+        <div class="toolbar" style="margin-top:10px">
+          <button class="btn small" id="hd-verify">Verify now</button>
+          <button class="btn small" id="hd-checkpoint" title="Write down the current fingerprint of the audit log">Add checkpoint</button>
+        </div>
+        <p class="tiny" style="margin:10px 0 0">
+          The database fingerprints every change and links each to the one before.
+          Edit any row by hand (e.g. in pgAdmin) and this check names it.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="hd-offline" hidden><div class="offline">
+    <h3 style="margin-bottom:6px">No database connected</h3>
+    <p class="sub">This tab needs PostgreSQL. Start everything with
+      <code>docker compose up --build</code> and open <code>http://localhost:8090</code>.</p>
+  </div></div>
+
+  <div class="card" id="hd-main">
+    <div class="card-h"><h3>Hospitals</h3><div class="spacer"></div>
+      <span class="note">occupied / capacity per pool</span></div>
+    <div class="card-b" style="padding-bottom:6px">
+      <div class="toolbar"><input type="search" id="hd-search" placeholder="Find a hospital by name or id"></div>
+    </div>
+    <div class="scroll-x"><table class="hd" id="hd-table"></table></div>
+  </div>
+
+  <div class="data-top">
+    <div class="card">
+      <div class="card-h"><h3>Transfers saved in the database</h3>
+        <div class="spacer"></div><button class="linkish" id="tr-refresh">refresh</button></div>
+      <div class="card-b">
+        <div class="scroll-x"><table class="mini" id="tr-table"></table></div>
+        <div id="tr-trace" style="margin-top:14px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Data quality of the real reports</h3>
+        <div class="spacer"></div><span class="note">Data Integrity Agent</span></div>
+      <div class="card-b" id="dq-box"><p class="sub">—</p></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><h3>Audit log</h3><div class="spacer"></div>
+      <span class="note">newest first &middot; written by the database, not the app</span></div>
+    <div class="card-b"><div class="scroll-x"><table class="mini" id="au-table"></table></div></div>
+  </div>
+
 </div></div>
 
 <div id="view-results" hidden>
@@ -330,13 +471,22 @@ table.rank tr.win td{background:var(--good-soft);font-weight:650}
         </p>
         <label class="f"><span>How busy is the network? <span class="mono" id="load-v">55%</span></span>
           <input type="range" id="f-load" min="0" max="95" step="1" value="55"></label>
-        <label class="f adv"><span>Scenario</span><select id="f-scen"></select></label>
+        <button class="btn db-only" id="apply-load" style="margin-bottom:9px" hidden>
+          Set every hospital to this busyness</button>
+        <label class="f adv mem-only"><span>Scenario</span><select id="f-scen"></select></label>
         <div class="btn-row">
           <button class="btn" id="reset">Start over</button>
-          <button class="btn" id="tamper">Fake a record</button>
+          <button class="btn mem-only" id="tamper">Fake a record</button>
+          <button class="btn db-only" id="check-records" hidden>Check records</button>
         </div>
-        <p class="tiny" style="margin:8px 0 0">
+        <p class="tiny mem-only" style="margin:8px 0 0" id="whatif-note">
           &ldquo;Fake a record&rdquo; secretly rewrites a past agreement. The check catches it instantly.
+        </p>
+        <p class="tiny db-only" style="margin:8px 0 0" hidden>
+          Busyness starts at what each hospital really reported (week of
+          <span id="ref-week">—</span>). &ldquo;Restore real data&rdquo; puts it back.
+          To test tamper detection, change any record in pgAdmin, then press
+          &ldquo;Check records&rdquo;.
         </p>
       </div>
     </div>
@@ -495,7 +645,24 @@ function connect(){
   ws.onerror=()=>{$("#conn").className="dot dead"};
   ws.onmessage=e=>{try{handle(JSON.parse(e.data))}catch(err){console.error(err)}};
 }
-function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
+function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify({...o, actor:actor()})); }
+
+/* Who is acting. Kept in this browser only; every saved change carries it. */
+function actor(){ return ($("#actor").value||"").trim()||"reviewer"; }
+try{ const a=localStorage.getItem("mahros-actor"); if(a) $("#actor").value=a; }catch(e){}
+$("#actor").onchange=()=>{ try{ localStorage.setItem("mahros-actor",actor()); }catch(e){} };
+
+async function api(path, opts={}){
+  const init={method:opts.method||"GET",
+    headers:{"Content-Type":"application/json","X-MAHROS-Actor":actor()}};
+  if(opts.body!==undefined) init.body=JSON.stringify({...opts.body, actor:actor()});
+  try{
+    const r=await fetch(path, init);
+    const j=await r.json().catch(()=>({error:`HTTP ${r.status}`}));
+    if(!r.ok && !j.error) j.error=`HTTP ${r.status}`;
+    return j;
+  }catch(e){ return {error:"Cannot reach the server."}; }
+}
 
 function handle(m){
   switch(m.type){
@@ -506,9 +673,10 @@ function handle(m){
     case "failed": failed(m); break;
     case "tamper": onTamper(m); break;
     case "policy": POLICIES[m.hospital]=m.policy; drawPolicies(); drawMap(); break;
-    case "reset": clearTheatre(); POLICIES={}; break;
+    case "reset": clearTheatre(); POLICIES={}; if(!$("#view-data").hidden) loadData(); break;
     case "busy": setBusy(m.busy); break;
-    case "error": log("error: "+m.message,"bad"); break;
+    case "error": log("error: "+m.message,"bad");
+      say("That did not go through", esc(m.message), "bad"); break;
   }
 }
 function log(msg,kind=""){
@@ -541,9 +709,19 @@ function renderState(){
 
   (integ.hospitals||[]).forEach(h=>{POLICIES[h.id]=h.policy});
 
-  const led=STATE.ledger;
-  $("#p-ledger").textContent=led.valid?"records intact":"RECORD TAMPERED";
-  $("#p-ledger").className="pill "+(led.valid?"ok":"bad");
+  const led=STATE.ledger, db=STATE.db||{connected:false};
+  const intact=led.valid && (!db.connected || (db.ledger.valid && db.audit.valid));
+  $("#p-ledger").textContent=intact?"records intact":"RECORD TAMPERED";
+  $("#p-ledger").className="pill "+(intact?"ok":"bad");
+  $("#p-db").textContent=db.connected?"saved to PostgreSQL":"not saving: no database";
+  $("#p-db").className="pill "+(db.connected?"ok":"bad");
+  $("#p-db").title=db.connected?"Every transfer and change is written to the database"
+                               :(db.error||"Running in memory only; nothing is saved");
+  $$(".db-only").forEach(n=>n.hidden=!db.connected);
+  $$(".mem-only").forEach(n=>n.hidden=db.connected);
+  $("#reset").textContent=db.connected?"Restore real data":"Start over";
+  if(db.connected) $("#ref-week").textContent=db.reference_week;
+  if(!$("#view-data").hidden) scheduleData();
 
   const d=STATE.decentralisation;
   $("#s-decent").innerHTML=
@@ -990,7 +1168,8 @@ function award(m){
   say(`Patient placed at ${m.winner} — care starts in ${m.time_to_care} minutes`,
       `With <b>${m.slack_minutes} minutes to spare</b>. The agreement, the reason for it, `+
       `and every refusal along the way are now permanently recorded.`, "good");
-  log(`${m.origin} → ${m.winner} in ${m.time_to_care} min`,"ok");
+  log(`${m.origin} → ${m.winner} in ${m.time_to_care} min`+
+      (m.saved?" · saved to the database":""),"ok");
 }
 
 function failed(m){
@@ -1019,7 +1198,7 @@ function onTamper(m){
 
 /* ---------------- controls ---------------- */
 function setBusy(b){ BUSY=b;
-  ["go","auto1","auto10","reset","tamper"].forEach(id=>$("#"+id).disabled=b); }
+  ["go","auto1","auto10","reset","tamper","apply-load"].forEach(id=>$("#"+id).disabled=b); }
 
 function acuityNote(){
   const w=WINDOWS[ACUITY];
@@ -1041,6 +1220,23 @@ $("#go").onclick=()=>{
 };
 $("#auto1").onclick =()=>{setBusy(true);send({action:"auto",count:1,pace_ms:+$("#f-pace").value})};
 $("#auto10").onclick=()=>{setBusy(true);send({action:"auto",count:10,pace_ms:120})};
+$("#apply-load").onclick=()=>{
+  send({action:"load",level:+$("#f-load").value/100});
+  say(`Every hospital set to ${$("#f-load").value}% busy`,
+      "Saved to the database and recorded with your name. "+
+      "&ldquo;Restore real data&rdquo; returns each hospital to what it actually reported.");
+};
+$("#check-records").onclick=async()=>{
+  const [a,l]=await Promise.all([api("/api/audit/verify"),api("/api/ledger/verify")]);
+  if(a.error||l.error){ say("Could not check the records",esc(a.error||l.error),"bad"); return; }
+  if(a.valid && l.valid)
+    say("Every record checks out",
+        `${a.rows_checked} audit entries and ${l.blocks} ledger blocks re-computed from the `+
+        `database. Nothing has been changed after the fact.`,"good");
+  else
+    say("A record was changed after the fact",
+        esc(!a.valid?`Audit entry #${a.first_bad_id}: ${a.problem}.`:l.errors.join("; ")),"bad");
+};
 $("#reset").onclick =()=>{POLICIES={};send({action:"reset",scenario:$("#f-scen").value,
    load:+$("#f-load").value/100, fairness_enabled:$("#f-fair").checked,
    argumentation_enabled:$("#f-argue").checked})};
@@ -1086,9 +1282,270 @@ $("#tabs").onclick=e=>{
   const v=b.dataset.view;
   $$("#tabs button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
   $("#view-live").hidden = v!=="live";
+  $("#view-data").hidden = v!=="data";
   $("#view-results").hidden = v!=="results";
+  if(v==="data") loadData();
   if(v==="results" && $("#dash").src==="about:blank") $("#dash").src="/dashboard";
 };
+
+/* ================= Hospital data tab ================= */
+const KIND_LABEL={icu_bed:"ICU",hdu_bed:"Step-down",ward_bed:"Ward",
+                  or_slot:"OR slots",ventilator:"Ventilators",cath_lab:"Cath labs"};
+const KINDS=Object.keys(KIND_LABEL);
+const POLICY_LABEL={honest:"Honest",strategic:"Protective (may refuse falsely)",
+                    defensive:"Cautious (keeps extra reserve)"};
+const HD={rows:[],dirty:{},open:null,timer:null,names:{}};
+
+function scheduleData(){ clearTimeout(HD.timer); HD.timer=setTimeout(loadData,700); }
+
+async function loadData(){
+  const r=await api("/api/hospitals");
+  const off=!!r.error;
+  $("#hd-offline").hidden=!off; $("#hd-main").hidden=off;
+  if(off){ $("#hd-msg").textContent=""; return; }
+  HD.rows=r.hospitals; HD.policies=r.policies||["honest","strategic","defensive"];
+  HD.rows.forEach(h=>HD.names[h.hospital_id]=h.name);
+  const e=r.epoch||{};
+  $("#hd-epoch").textContent=`real data: week of ${e.reference_week} · session ${e.epoch}`;
+  renderHospitals(); verifyRecords(false); loadTransfers(); loadAudit(); loadQuality();
+}
+
+function renderHospitals(){
+  const q=($("#hd-search").value||"").toLowerCase();
+  const t=$("#hd-table"); t.innerHTML="";
+  const head=el("tr");
+  ["Hospital",...KINDS.map(k=>KIND_LABEL[k]),"Behaviour",""].forEach(x=>head.append(el("th",null,x)));
+  t.append(head);
+  HD.rows.filter(h=>!q||h.name.toLowerCase().includes(q)||h.hospital_id.includes(q)).forEach(h=>{
+    const d=HD.dirty[h.hospital_id];
+    const tr=el("tr",d?"dirty":""); tr.dataset.id=h.hospital_id;
+    tr.append(el("td",null,
+      `<div class="hname">${esc(h.name)}${h.edited?' <span class="edited">edited</span>':''}</div>`+
+      `<div class="hmeta mono">${h.hospital_id} · tier ${h.tier} · ${esc(h.city||"")}</div>`+
+      `<div title="Specialties: real data from CMS, locked">`+
+      h.specialties.map(x=>`<span class="spec">${esc(x)}</span>`).join("")+
+      ` <span class="lock">&#128274;</span></div>`));
+    KINDS.forEach(k=>{
+      const p=h.pools.find(x=>x.kind===k);
+      const td=el("td","cell-pool");
+      if(!p){ td.innerHTML='<span class="tiny">none</span>'; tr.append(td); return; }
+      const val=d&&d.occupied&&d.occupied[k]!==undefined?d.occupied[k]:p.occupied;
+      const inp=el("input"); inp.type="number"; inp.min=0; inp.max=p.capacity; inp.value=val;
+      inp.title=`Occupied ${KIND_LABEL[k]}. Real value for the reference week: ${p.default_occupied}.`;
+      inp.oninput=()=>markDirty(h,{kind:k,value:inp.value});
+      td.append(inp);
+      td.append(el("span","cap",` / ${p.capacity} <span class="lock" title="Capacity: ${esc(p.capacity_provenance)} — ${esc(p.capacity_source)}">&#128274;</span>`));
+      td.append(el("span","real",`real: ${p.default_occupied}`+
+        (p.edited?'<span class="edited">edited</span>':'')+
+        (p.transferred_in?` · ${p.transferred_in} moved in`:"")));
+      td.title=`Default: ${p.default_provenance} — ${p.default_source}`;
+      tr.append(td);
+    });
+    const ptd=el("td");
+    const sel=el("select","pol");
+    HD.policies.forEach(x=>sel.append(new Option(POLICY_LABEL[x]||x,x)));
+    sel.value=d&&d.policy?d.policy:h.policy;
+    sel.onchange=()=>markDirty(h,{policy:sel.value});
+    ptd.append(sel);
+    if(h.policy!=="honest") ptd.append(el("span","edited","edited"));
+    tr.append(ptd);
+    const act=el("td","cell-act");
+    const save=el("button","btn primary small","Save"); save.disabled=!d;
+    save.onclick=()=>saveHospital(h.hospital_id, tr);
+    const back=el("button","btn small","Restore");
+    back.title="Put this hospital back to what it really reported";
+    back.dataset.armed="false";
+    back.onclick=()=>armThen(back,"Sure?",()=>restoreOne(h.hospital_id, tr));
+    const hist=el("button","btn small",HD.open===h.hospital_id?"Hide":"History");
+    hist.onclick=()=>{HD.open=HD.open===h.hospital_id?null:h.hospital_id;renderHospitals();};
+    act.append(save,back,hist);
+    act.append(el("span","row-msg",""));
+    tr.append(act);
+    t.append(tr);
+    if(HD.open===h.hospital_id){
+      const hr=el("tr","hist"); const td=el("td"); td.colSpan=KINDS.length+3;
+      const grid=el("div","hist-grid");
+      const hc=el("div","hist-list","loading…"), hf=el("div","hist-list","loading…");
+      const c1=el("div",null,'<b style="font-size:12.5px">Changes (from the audit log)</b>');
+      const c2=el("div",null,'<b style="font-size:12.5px">Problems in this hospital&rsquo;s real reports</b>');
+      c1.append(hc); c2.append(hf); grid.append(c1,c2); td.append(grid);
+      hr.append(td); t.append(hr);
+      loadHistory(h.hospital_id, hc, hf);
+    }
+  });
+}
+
+function markDirty(h, change){
+  const d=HD.dirty[h.hospital_id]||{occupied:{}};
+  if(change.kind) d.occupied[change.kind]=change.value;
+  if(change.policy) d.policy=change.policy;
+  HD.dirty[h.hospital_id]=d;
+  const tr=$(`#hd-table tr[data-id="${h.hospital_id}"]`);
+  if(tr){ tr.className="dirty"; tr.querySelector(".btn.primary").disabled=false; }
+}
+
+function rowMsg(tr,text,kind){ const m=tr&&tr.querySelector(".row-msg");
+  if(m){ m.className="row-msg "+(kind||""); m.textContent=text; } }
+
+async function saveHospital(id, tr){
+  const d=HD.dirty[id]; if(!d) return;
+  const h=HD.rows.find(x=>x.hospital_id===id);
+  const occupied={};
+  Object.entries(d.occupied).forEach(([k,v])=>{
+    const p=h.pools.find(x=>x.kind===k); if(p && +v!==p.occupied) occupied[k]=+v; });
+  const body={};
+  if(Object.keys(occupied).length) body.occupied=occupied;
+  if(d.policy && d.policy!==h.policy) body.policy=d.policy;
+  if(!Object.keys(body).length){ delete HD.dirty[id]; renderHospitals(); return; }
+  rowMsg(tr,"saving…");
+  const r=await api(`/api/hospitals/${id}`,{method:"PATCH",body});
+  if(r.error){ rowMsg(tr,r.error,"bad"); return; }
+  delete HD.dirty[id];
+  HD.rows=r.hospitals; renderHospitals();
+  const tr2=$(`#hd-table tr[data-id="${id}"]`); rowMsg(tr2,"saved · recorded with your name","ok");
+  loadAudit(); verifyRecords(false);
+}
+
+async function restoreOne(id, tr){
+  rowMsg(tr,"restoring…");
+  const r=await api(`/api/hospitals/${id}/restore`,{method:"POST",body:{}});
+  if(r.error){ rowMsg(tr,r.error,"bad"); return; }
+  delete HD.dirty[id]; await loadData();
+  const tr2=$(`#hd-table tr[data-id="${id}"]`); rowMsg(tr2,"back to real data","ok");
+}
+
+/* Two clicks for anything you cannot undo; no browser dialogs. */
+function armThen(btn,label,fn){
+  if(btn.dataset.armed==="true"){ btn.dataset.armed="false"; btn.textContent=btn._label; fn(); return; }
+  btn._label=btn.textContent; btn.dataset.armed="true"; btn.textContent=label;
+  setTimeout(()=>{ if(btn.dataset.armed==="true"){ btn.dataset.armed="false"; btn.textContent=btn._label; } },4000);
+}
+
+$("#hd-restore-all").onclick=e=>armThen(e.target,"Click again to restore everything",async()=>{
+  $("#hd-msg").textContent="restoring…";
+  const r=await api("/api/restore",{method:"POST",body:{}});
+  if(r.error){ $("#hd-msg").textContent=r.error; return; }
+  HD.dirty={};
+  $("#hd-msg").textContent=`Done: ${r.pools_reset} pools and ${r.policies_reset} behaviours back to real data, `+
+    `${r.discharged} transferred patients discharged. New session ${r.new_epoch}. Nothing was deleted.`;
+  loadData();
+});
+$("#hd-refresh").onclick=()=>loadData();
+$("#hd-search").oninput=()=>renderHospitals();
+
+function changeText(r){
+  const a=r.after||{}, b=r.before||{};
+  if(r.table_name==="resources")
+    return `${esc(HD.names[a.hospital_id]||a.hospital_id)} · ${KIND_LABEL[a.kind]||a.kind}: `+
+           `occupied ${b.occupied??"—"} → <b>${a.occupied}</b>`;
+  if(r.table_name==="hospital_settings")
+    return `${esc(HD.names[a.hospital_id]||a.hospital_id)} · behaviour: ${esc(b.policy||"—")} → <b>${esc(a.policy)}</b>`;
+  if(!r.table_name){
+    const det=Object.entries(a).map(([k,v])=>`${esc(k)} ${esc(v)}`).join(", ");
+    return `<b>${esc(nice(r.action.toLowerCase()))}</b>${det?" · "+det:""}`;
+  }
+  return `${esc(r.action.toLowerCase())} ${esc(nice(r.table_name))} <span class="mono">${esc(r.row_pk||"")}</span>`;
+}
+const when=ts=>new Date(ts).toLocaleString();
+
+async function loadHistory(id, hc, hf){
+  const [h,f]=await Promise.all([api(`/api/hospitals/${id}/history`),api(`/api/hospitals/${id}/flags`)]);
+  hc.innerHTML=(h.history||[]).length?"":'<p class="sub">No changes yet: this hospital is exactly as it reported.</p>';
+  (h.history||[]).forEach(r=>hc.append(el("div","hrow",
+    `<span class="when">#${r.audit_id} · ${when(r.ts)}</span> · <b>${esc(r.actor)}</b><br>${changeText(r)}`)));
+  const flags=f.flags||[];
+  hf.innerHTML=flags.length?`<p class="sub" style="margin:4px 0">${flags.length} weekly report(s) flagged out of 216. `+
+    `These are the hospital's own submissions to HHS.</p>`:'<p class="sub">No problems found in its reports.</p>';
+  flags.slice(0,60).forEach(x=>hf.append(el("div","hrow",
+    `<span class="sev ${x.severity}">${x.severity}</span> <span class="when">week of ${x.week_start}</span><br>${esc(x.detail)}`)));
+}
+
+async function verifyRecords(announce){
+  const [a,l]=await Promise.all([api("/api/audit/verify"),api("/api/ledger/verify")]);
+  if(a.error||l.error) return;
+  $("#hd-audit").textContent=a.valid?"audit log intact":"AUDIT LOG CHANGED";
+  $("#hd-audit").className="pill "+(a.valid?"ok":"bad");
+  $("#hd-audit-note").textContent=a.valid
+    ?`${a.rows_checked} entries re-checked · ${a.checkpoints} checkpoint(s)`
+    :`entry #${a.first_bad_id}: ${a.problem}`;
+  $("#hd-ledger").textContent=l.valid?"transfer ledger intact":"LEDGER CHANGED";
+  $("#hd-ledger").className="pill "+(l.valid?"ok":"bad");
+  $("#hd-ledger-note").textContent=l.valid?`${l.blocks} blocks, ${l.entries} entries re-computed`:l.errors.join("; ");
+  if(announce) $("#hd-msg").textContent=a.valid&&l.valid?"Verified: nothing has been changed after the fact.":"Verification failed: see the right-hand panel.";
+}
+$("#hd-verify").onclick=()=>verifyRecords(true);
+$("#hd-checkpoint").onclick=async()=>{
+  const r=await api("/api/audit/checkpoint",{method:"POST",body:{}});
+  $("#hd-msg").textContent=r.error?r.error:`Checkpoint ${r.checkpoint_id} written at audit entry #${r.audit_id}.`;
+  verifyRecords(false);
+};
+
+async function loadTransfers(){
+  const r=await api("/api/transfers?limit=15"); const t=$("#tr-table"); t.innerHTML="";
+  if(r.error) return;
+  if(!r.transfers.length){ t.innerHTML='<tr><td class="sub">No transfers yet. Run some on the Live tab.</td></tr>'; return; }
+  t.append(el("tr",null,"<th>When</th><th>From → to</th><th>Needs</th><th>Result</th><th></th>"));
+  r.transfers.forEach(x=>{
+    const tr=el("tr");
+    tr.append(el("td","mono",new Date(x.created_at).toLocaleTimeString()));
+    tr.append(el("td",null,`<span class="mono">${x.origin_id}</span> → <span class="mono">${x.receiver_id||"—"}</span>`));
+    tr.append(el("td",null,`${nice(x.resource_kind)} · ${esc(x.specialty)}`));
+    tr.append(el("td",null,x.outcome==="awarded"?`placed${x.challenges?` · ${x.challenges} challenged`:""}`
+                                                :`<span style="color:var(--crit)">${esc(plain(x.failure_reason||"failed"))}</span>`));
+    const b=el("button","linkish","trace"); b.onclick=()=>showTrace(x.request_id);
+    const td=el("td"); td.append(b); tr.append(td);
+    t.append(tr);
+  });
+}
+$("#tr-refresh").onclick=()=>loadTransfers();
+
+async function showTrace(id){
+  const r=await api(`/api/transfers/${id}`); const box=$("#tr-trace");
+  if(r.error){ box.innerHTML=`<p class="sub">${esc(r.error)}</p>`; return; }
+  const rows=r.decisions.map(d=>`<tr><td class="mono">${d.seq}</td><td class="mono">${esc(d.agent_id)}</td>`+
+    `<td><b>${esc(nice(d.action))}</b></td><td>${esc(d.reason?plain(d.reason):"")}</td></tr>`).join("");
+  const a=r.allocation;
+  box.innerHTML=`<p class="sub" style="margin:0 0 6px">Request <span class="mono">${esc(id)}</span>, as stored. `+
+    `Each line is a row in <span class="mono">agent_decisions</span>.</p>`+
+    `<table class="mini"><tr><th>#</th><th>Agent</th><th>Did</th><th>Why</th></tr>${rows}</table>`+
+    (a?`<p class="sub" style="margin:8px 0 0">Allocated to <b>${esc(a.receiver_id)}</b> · admission `+
+       `<span class="mono">${esc(String(r.admission.admission_id).slice(0,8))}…</span> · ledger block `+
+       `<span class="mono">${r.ledger_block?r.ledger_block.block_index+" "+r.ledger_block.block_hash.slice(0,16)+"…":"—"}</span></p>`:"")+
+    `<p class="sub" style="margin:4px 0 0">${r.audit.length} audit entries written for this transfer.</p>`;
+}
+
+async function loadAudit(){
+  const r=await api("/api/audit?limit=40"); const t=$("#au-table"); t.innerHTML="";
+  if(r.error) return;
+  t.append(el("tr",null,"<th>#</th><th>When</th><th>Who</th><th>What changed</th><th>Fingerprint</th>"));
+  r.rows.forEach(x=>{
+    const tr=el("tr");
+    tr.append(el("td","mono",String(x.audit_id)));
+    tr.append(el("td","mono",when(x.ts)));
+    tr.append(el("td",null,esc(x.actor)));
+    tr.append(el("td",null,changeText(x)));
+    tr.append(el("td","mono",x.row_hash.slice(0,12)+"…"));
+    t.append(tr);
+  });
+}
+
+async function loadQuality(){
+  const r=await api("/api/data-integrity"); const box=$("#dq-box");
+  if(r.error){ box.innerHTML=`<p class="sub">${esc(r.error)}</p>`; return; }
+  const pct=(100*(r.red+r.amber)/Math.max(1,r.reports_checked)).toFixed(1);
+  box.innerHTML=
+    `<p class="sub" style="margin:0 0 10px">The hospitals' own weekly reports to HHS, checked with plain rules. `+
+    `This is why MAHROS checks claims instead of trusting them. A flag means a report is unreliable, `+
+    `not that anyone lied.</p>`+
+    `<div class="stat-row"><div class="stat"><div class="k">Reports flagged</div><div class="v">${pct}%</div>`+
+    `<div class="x">${r.red+r.amber} of ${r.reports_checked}</div></div>`+
+    `<div class="stat"><div class="k">Cannot be right</div><div class="v">${r.red}</div><div class="x">red</div></div>`+
+    `<div class="stat"><div class="k">Hospitals affected</div><div class="v">${r.hospitals_with_red}/${r.hospitals}</div>`+
+    `<div class="x">at least one red</div></div></div>`+
+    `<table class="mini" style="margin-top:10px"><tr><th>Rule</th><th>Level</th><th>Reports</th></tr>`+
+    r.by_rule.map(x=>`<tr><td>${esc(nice(x.rule))}</td><td><span class="sev ${x.severity}">${x.severity}</span></td><td class="mono">${x.n}</td></tr>`).join("")+
+    `</table>`;
+}
 
 document.body.dataset.mode="simple";
 acuityNote();
