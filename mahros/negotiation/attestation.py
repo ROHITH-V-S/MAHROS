@@ -161,6 +161,10 @@ class Keyring:
         self._seed = seed or b"mahros-attestation"
         self._hospital: dict[str, Any] = {}
         self._cosigner = self._derive("cosigner")
+        #: What a verifier holds: public keys, derived once. Deriving one is an
+        #: elliptic-curve multiplication, and doing it on every check doubled
+        #: the cost of verification, which sits inside a live negotiation.
+        self._verifying: dict[str, Any] = {}
 
     def _derive(self, label: str):
         material = hashlib.sha256(self._seed + label.encode()).digest()
@@ -176,6 +180,14 @@ class Keyring:
     def cosigner_key(self):
         return self._cosigner
 
+    def verifying_key(self, hospital: str | None):
+        """Public key for `hospital`, or the co-signer's when None (HMAC: the secret)."""
+        label = "cosigner" if hospital is None else f"hospital:{hospital}"
+        if label not in self._verifying:
+            key = self._cosigner if hospital is None else self.hospital_key(hospital)
+            self._verifying[label] = key.public_key() if _ED is not None else key
+        return self._verifying[label]
+
     # -- primitive ------------------------------------------------------- #
     @staticmethod
     def _sign_with(key, payload: bytes) -> str:
@@ -185,9 +197,10 @@ class Keyring:
 
     @staticmethod
     def _verify_with(key, payload: bytes, signature: str) -> bool:
+        """`key` is a verifying key from `verifying_key`."""
         if _ED is not None:
             try:
-                key.public_key().verify(bytes.fromhex(signature), payload)
+                key.verify(bytes.fromhex(signature), payload)
                 return True
             except Exception:
                 return False
@@ -352,9 +365,9 @@ class AttestationAuthority:
         """
         payload = att.canonical()
         ok = (
-            Keyring._verify_with(self.keyring.hospital_key(att.hospital),
+            Keyring._verify_with(self.keyring.verifying_key(att.hospital),
                                  payload, att.hospital_signature)
-            and Keyring._verify_with(self.keyring.cosigner_key(),
+            and Keyring._verify_with(self.keyring.verifying_key(None),
                                      payload, att.cosigner_signature)
             and att.asserted in PREDICATES
         )
