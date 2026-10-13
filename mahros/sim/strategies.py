@@ -164,6 +164,7 @@ class MahrosStrategy(Strategy):
             # Proactive checking: refusals examined with no evidence against
             # them, and how many the hospital would not certify.
             "spot_checks": neg.total_spot_checks,
+            "times_caught": dict(neg.times_caught),
             "spot_check_failures": neg.total_spot_check_failures,
             "attestations": neg.total_attested,
             "attestations_refused": neg.total_attest_refused,

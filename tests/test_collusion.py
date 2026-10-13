@@ -222,3 +222,41 @@ def test_spot_checks_cost_an_honest_network_nothing():
     _, plain = _run()
     _, checked = _run(spot_check_rate=0.30, **ATTEST)
     assert abs(checked.success_rate - plain.success_rate) < 0.03
+
+
+# --------------------------------------------------------------------------- #
+# Risk-based spot checks
+# --------------------------------------------------------------------------- #
+
+def _wrongly_accused(result) -> int:
+    return sum(h.refusals_overruled for h in result.hospitals.values()
+               if h.policy.name not in ("strategic", "colluding"))
+
+
+def test_escalated_checks_only_land_on_hospitals_already_caught():
+    result, _ = _run(collusion_size=6, enable_attestation=True,
+                     attestation_deterrence=0.8, spot_check_rate=0.05,
+                     spot_check_escalated_rate=1.0)
+    neg = result.strategy_stats
+    assert neg["spot_checks"] > 0
+    caught = {h for h, n in result.strategy_stats["times_caught"].items() if n}
+    assert caught, "a cartel member should have been caught at least once"
+    assert all(result.hospitals[h].policy.name == "colluding" for h in caught)
+    assert _wrongly_accused(result) == 0
+
+
+def test_risk_based_checking_never_accuses_an_honest_network():
+    result, _ = _run(enable_attestation=True, attestation_deterrence=0.8,
+                     spot_check_rate=0.05, spot_check_escalated_rate=1.0)
+    assert _wrongly_accused(result) == 0
+    assert not any(result.strategy_stats["times_caught"].values())
+
+
+def test_uniform_checking_is_unchanged_when_escalation_is_off():
+    a, ma = _run(collusion_size=6, enable_attestation=True, attestation_deterrence=0.8,
+                 spot_check_rate=0.05)
+    b, mb = _run(collusion_size=6, enable_attestation=True, attestation_deterrence=0.8,
+                 spot_check_rate=0.05, spot_check_escalated_rate=0.0)
+    assert ma.success_rate == mb.success_rate
+    assert a.strategy_stats["spot_checks"] == b.strategy_stats["spot_checks"]
+

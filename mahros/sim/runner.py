@@ -103,6 +103,9 @@ class RunConfig:
     #: proactive check in the protocol; exists because a coordinated cartel
     #: never triggers a reactive one. 0.0 = purely reactive, as before.
     spot_check_rate: float = 0.0
+    #: Spot-check rate for a hospital already caught misreporting (risk-based
+    #: checking). 0.0 = uniform, which is every pre-existing result.
+    spot_check_escalated_rate: float = 0.0
     #: Number of hospitals forming a coordinated-abstention cartel. 0 = none,
     #: which is every pre-existing result.
     collusion_size: int = 0
@@ -216,7 +219,8 @@ class SimulationRunner:
                           enable_argumentation=cfg.enable_argumentation,
                           attestation_enabled=cfg.enable_attestation,
                           attestation_deterrence=cfg.attestation_deterrence,
-                          spot_check_rate=cfg.spot_check_rate),
+                          spot_check_rate=cfg.spot_check_rate,
+                          spot_check_escalated_rate=cfg.spot_check_escalated_rate),
             attestation=self.attestation,
             corefusal=self.corefusal,
             coordinator=self.coordinator,

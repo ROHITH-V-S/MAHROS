@@ -89,6 +89,12 @@ class CNPConfig:
     #: claims that were never in question. 0.0 keeps the purely reactive
     #: protocol, which is every earlier result.
     spot_check_rate: float = 0.0
+    #: Risk-based spot checks. A hospital that has already been caught -- it
+    #: failed a spot check or had a refusal overruled -- is checked at this
+    #: rate instead of `spot_check_rate`. 0.0 keeps uniform checking. Honest
+    #: hospitals cannot be caught (their claims are true and they sign them),
+    #: so escalation only ever lands on a proven misreporter.
+    spot_check_escalated_rate: float = 0.0
     bid_window_minutes: float = 2.0      # how long the origin waits for proposals
     max_peers: int = 8                   # cap the broadcast (bandwidth + realism)
     reservation_hold_minutes: float = 45.0
@@ -261,6 +267,10 @@ class ContractNetNegotiator:
         self.total_attest_refused = 0
         self.total_spot_checks = 0
         self.total_spot_check_failures = 0
+        #: hospital -> times caught: a refusal struck out (by a challenge or a
+        #: failed spot check) when the hospital in fact had the bed.
+        #: The only memory the protocol keeps between requests.
+        self.times_caught: dict[str, int] = {}
         # Spot checks must be unpredictable to a hospital but reproducible for
         # the experiment, so the stream is seeded from the network identity.
         # Seeded from a STABLE digest, not hash(): string hashing is
@@ -496,11 +506,15 @@ class ContractNetNegotiator:
             # decided before a hospital's bidding policy is consulted and leave
             # no statement on record, so a hospital asked to certify one could
             # not, and an honest refusal would be struck out for it.
-            if (self.config.spot_check_rate > 0.0
+            rate = self.config.spot_check_rate
+            if (self.times_caught.get(bid.bidder)
+                    and self.config.spot_check_escalated_rate > rate):
+                rate = self.config.spot_check_escalated_rate
+            if (rate > 0.0
                     and self.attestation is not None
                     and self.config.attestation_enabled
                     and bid.refusal_reason in SPOT_CHECKABLE_REASONS
-                    and self._rng.random() < self.config.spot_check_rate):
+                    and self._rng.random() < rate):
                 self.total_spot_checks += 1
                 if not self._attested_defence(bid, req, af, now):
                     # Would not certify a refusal it had just made in public.
@@ -618,6 +632,10 @@ class ContractNetNegotiator:
                 truthful = self.hospitals[bid.bidder].truthful_bid(
                     public, self.travel_time(req.origin, bid.bidder), now)
                 if truthful.feasible:
+                    # Caught: its refusal was struck out and it turned out to
+                    # have the bed. A struck-out refusal whose truthful answer
+                    # is still "no" was not a lie, and does not count.
+                    self.times_caught[bid.bidder] = self.times_caught.get(bid.bidder, 0) + 1
                     overruled += 1
                     self.total_overruled += 1
                     self._emit("overruled", {
