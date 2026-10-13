@@ -337,3 +337,20 @@ def test_network_load_never_evicts_transferred_patients(store):
     rcv = r["agreement"]["receiver"]
     store.set_network_load("user:test", 0.0)
     assert _pool(store, rcv, "icu_bed")["occupied"] == 1
+
+
+def test_bottlenecks_report_unmet_needs_and_fullest_pools(store):
+    """Fill every ICU, ask for an ICU bed: the monitor names ICU as the gap."""
+    with store.tx() as cur:
+        cur.execute("SELECT hospital_id, capacity FROM resources WHERE kind = 'icu_bed'")
+        icus = cur.fetchall()
+    for row in icus:
+        store.update_hospital("user:test", row["hospital_id"],
+                              occupied={"icu_bed": row["capacity"]})
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed", specialty="general",
+                             acuity=3, actor="user:test")
+    assert not r["awarded"]
+    b = store.bottlenecks()
+    assert b["failed"] >= 1 and "icu bed" in b["headline"]
+    assert b["pools"][0]["kind"] == "icu_bed" and b["pools"][0]["occupancy"] == 1.0

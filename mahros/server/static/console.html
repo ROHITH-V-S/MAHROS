@@ -373,6 +373,12 @@ table.mini td.mono{font-size:11px}
   </div>
 
   <div class="card">
+    <div class="card-h"><h3>Where the network is running out</h3>
+      <div class="spacer"></div><span class="note">Regional Monitor &middot; this session</span></div>
+    <div class="card-b" id="bn-box"><p class="sub">&mdash;</p></div>
+  </div>
+
+  <div class="card">
     <div class="card-h"><h3>Audit log</h3><div class="spacer"></div>
       <span class="note">newest first &middot; written by the database, not the app</span></div>
     <div class="card-b"><div class="scroll-x"><table class="mini" id="au-table"></table></div></div>
@@ -1308,6 +1314,7 @@ async function loadData(){
   const e=r.epoch||{};
   $("#hd-epoch").textContent=`real data: week of ${e.reference_week} · session ${e.epoch}`;
   renderHospitals(); verifyRecords(false); loadTransfers(); loadAudit(); loadQuality();
+  loadBottlenecks();
 }
 
 function renderHospitals(){
@@ -1527,6 +1534,29 @@ async function loadAudit(){
     tr.append(el("td","mono",x.row_hash.slice(0,12)+"…"));
     t.append(tr);
   });
+}
+
+async function loadBottlenecks(){
+  const r=await api("/api/bottlenecks"); const box=$("#bn-box");
+  if(r.error){ box.innerHTML=`<p class="sub">${esc(r.error)}</p>`; return; }
+  const pct=v=>v==null?"—":(100*v).toFixed(0)+"%";
+  const pools=r.pools.map(p=>`<tr><td>${esc(KIND_LABEL[p.kind]||p.kind)}</td>`+
+    `<td class="mono">${p.occupied} / ${p.capacity}</td><td class="mono">${pct(p.occupancy)}</td>`+
+    `<td class="mono">${p.full_hospitals} of ${p.hospitals}</td></tr>`).join("");
+  const needs=r.needs.filter(n=>n.failed).slice(0,6).map(n=>`<tr><td>${esc(nice(n.resource_kind))} · ${esc(n.specialty)}</td>`+
+    `<td class="mono">${n.failed} / ${n.requests}</td></tr>`).join("");
+  const ref=r.refusers.map(x=>`<tr><td>${esc(x.name)}</td><td class="mono">${x.refusals}</td>`+
+    `<td class="mono">${x.said_full}</td></tr>`).join("");
+  box.innerHTML=
+    `<p class="sub" style="margin:0 0 10px">${r.requests?`${r.requests} transfer(s) this session, ${r.failed} not placed. `:"No transfers yet this session. "}`+
+    `${r.headline?`<b>${esc(r.headline)}</b>`:""}</p>`+
+    `<div class="hist-grid"><div><b style="font-size:12.5px">Fullest pools, whole network</b>`+
+    `<table class="mini"><tr><th>Pool</th><th>Occupied</th><th>Full</th><th>Hospitals at 100%</th></tr>${pools}</table></div>`+
+    `<div><b style="font-size:12.5px">Needs that went unmet</b>`+
+    (needs?`<table class="mini"><tr><th>Need</th><th>Unplaced / asked</th></tr>${needs}</table>`:`<p class="sub">None so far.</p>`)+
+    `<b style="font-size:12.5px;display:block;margin-top:10px">Refused most</b>`+
+    (ref?`<table class="mini"><tr><th>Hospital</th><th>Refusals</th><th>Said "full"</th></tr>${ref}</table>`:`<p class="sub">None so far.</p>`)+
+    `</div></div>`;
 }
 
 async function loadQuality(){

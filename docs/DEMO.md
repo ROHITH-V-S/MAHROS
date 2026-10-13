@@ -1,143 +1,138 @@
 # Demo runbook
 
-One page. Read it the night before, glance at it on the day.
+One page. Read it the night before; glance at it on the day.
 For *what to say* and the questions you will be asked, see
 [PANEL_GUIDE.md](PANEL_GUIDE.md).
 
 ---
 
-## Before you leave the house
+## Before the review (10 minutes)
 
-```
-cd C:\Users\Rohith\Desktop\mahros
-python -m mahros.server
-```
+1. Start **Docker Desktop** and wait until it says it is running.
+2. In a terminal:
 
-Leave that terminal open. Open **http://127.0.0.1:8000**.
+   ```
+   cd C:\Users\Rohith\Desktop\mahros
+   docker compose up -d --build
+   ```
 
-Two tabs in the top bar: **Live negotiation** and **Results**.
+3. Open two browser tabs:
+   - **http://localhost:8090**: MAHROS
+   - **http://localhost:5051**: pgAdmin. In the left panel, open
+     *Servers → MAHROS database → Databases → mahros → Schemas → public → Tables*.
+     It should open without asking for a password. If it asks, the password
+     is `mahros-admin-local`.
+4. In MAHROS, type your name in **Your name** (top right). Every change you
+   make is recorded under it.
+5. In the **Hospital data** tab, click **Restore all to real data** (twice, to
+   confirm). You start clean, from what the hospitals really reported.
+6. Check the top bar shows **saved to PostgreSQL** (green) and **records intact**.
 
-Sanity check, 60 seconds:
+If **saved to PostgreSQL** is red, the database is not running: re-run step 2,
+or `docker compose logs app`.
 
-1. Click **▶ Run continuously** — cases start negotiating on their own. Stop it.
-2. Click **Fake a record** — the *records intact* pill turns red.
-3. Click **Results** — the charts load.
-4. Click **Start over** so you begin clean.
-
-If the Results tab is empty, you have not built it yet:
-
-```
-python experiments/run_all.py 5
-python experiments/build_dashboard.py
-```
-
----
-
-## The 3-minute version
-
-### 1. Frame the problem (30 s)
-
-> "A patient is already admitted and stabilised, and then deteriorates. They now
-> need an ICU bed, or a cath lab, that this hospital hasn't got. Today, a human
-> being picks up a phone and calls hospitals one at a time. That takes about
-> forty-seven minutes of staff time per transfer, and by the sixth call the
-> information from the first is out of date."
-
-### 2. Show the parallel ask (45 s)
-
-Set up **cath lab / cardiac / acuity 5**. Press **Find this patient a bed**.
-
-Point at the transcript as it fills:
-
-> "Every hospital is asked at the same moment, and each one answers for itself —
-> in its own words. Notice most of them are refusing because they don't *have* a
-> cath lab, not because they're full. That's the whole reason transfers exist:
-> it's scarce capability, not bed count."
-
-Point at the countdown bar at the top of the panel — the clinical window burning
-down.
-
-### 3. The turn — make a hospital dishonest (60 s)
-
-In **Are they telling the truth?**, find a tier-3 hospital and click its button
-so it reads **protective**.
-
-> "Accepting a transfer costs a hospital a bed it may need tonight. The cheapest
-> way to avoid one is to say you haven't got one. In an ordinary auction nobody
-> can check that."
-
-Run the same case again. It refuses.
-
-Now point at what happens next:
-
-- the **challenge** bubble, with the evidence card underneath it
-- the hospital failing to justify itself
-- **REFUSAL STRUCK OUT**
-- the **argument map** — green boxes survived, dashed red ones were defeated
-
-> "The refusal was checked against the shared record. Nobody revealed a bed count
-> — it was checked against what that hospital has already agreed to take. If you
-> declined an ICU patient and accepted a different one twenty minutes later, you
-> had a bed."
-
-### 4. The ablation, live (30 s)
-
-Turn **off** "Check refusals against the shared record". Run it again.
-
-> "Same hospital, same lie, and now it simply works. That's the comparison in the
-> paper — except there we run it across five thousand transfers instead of one."
-
-Turn it back on.
-
-### 5. Land it (15 s)
-
-Point at the masthead: **"0 wrongly accused"**.
-
-> "The mechanism has never once overruled a hospital that was telling the truth.
-> That's the number that decides whether you could deploy this — a system that
-> punished caution instead of dishonesty would be worse than useless."
-
-Finish on **Fake a record** if you have time: the chain check fails instantly.
+Fallback if Docker will not start: `python -m mahros.server` runs the same
+console in memory (no database tab, nothing saved). Say so if you use it.
 
 ---
 
-## Things that will go wrong, and what to do
+## The 10-minute demo
 
-**"I made it protective but nothing gets caught."**
-The network is too full — a protective hospital only lies when it genuinely has
-a bed, so when the network is full its refusals are simply *true*. Drag **How
-busy is the network?** down to ~50% and press **Start over**.
+### 1. The data is real, and you can query it (1 min)
 
-Say it out loud if it happens: *"it's not lying here because it really is full —
-that's the mechanism behaving correctly."* It sounds much better than silence.
+pgAdmin → `hhs_weekly_reports` → right-click → *View/Edit Data → First 100 Rows*.
 
-**"No challenge appears at all."**
-Challenges need history. Click **Run 10 fast** first to build up a record, then
-run your case.
+> "These are the weekly reports 27 named Houston hospitals sent to the US
+> government, 216 weeks each. The simulation runs on these hospitals, their
+> real beds, their real specialties from the CMS register, and real road times."
 
-**"The page is blank / the dot is red."**
-The server died. Restart it in the terminal; the page reconnects on its own.
+Then try to change one value in that grid and save. **The database refuses**:
+*"holds real public data ... and is locked"*.
 
-**"Results tab shows an error page."**
-You haven't built the dashboard. Use the two commands above, or just skip the
-tab — the live demo is the interesting half.
+> "Nobody, not even the database owner, can edit the real data. Only the
+> loader that imports it can."
 
-**Someone asks for the code mid-demo.**
-`mahros/negotiation/argumentation.py` is the contribution and is about 200 lines
-of well-commented Python. `mahros/negotiation/challenge.py` is what makes the
-ledger evidence.
+### 2. Ask every hospital at once (1.5 min)
+
+Live tab. Set **cath lab / cardiac / acuity 5**, any origin. Press
+**Find this patient a bed**.
+
+> "Every capable hospital in reach is asked at the same moment, and each
+> answers for itself from its own beds. Most refuse because they don't have a
+> cath lab: transfers exist because capability is scarce."
+
+### 3. Edit a hospital, see the system use it (2 min)
+
+**Hospital data** tab → Houston Methodist Hospital (450358). Its ICU shows
+about **155 / 158**: that is what it reported in January 2021. Capacity has a
+lock; occupancy does not.
+
+Change ICU occupancy to **100** → **Save**. Point at:
+- the yellow **edited** badge, with **real: 155** underneath
+- **History**: *"user:your-name · ICU: occupied 155 → 100"*
+
+pgAdmin → `audit_log` → *View/Edit Data → Last 100 Rows*: the same change,
+with the before and after values, who, when, and a fingerprint (`row_hash`).
+
+### 4. Catch a false refusal (2.5 min)
+
+Live tab. Origin **450076 (MD Anderson)**, **ICU bed / general / acuity 5**.
+Run it. Houston Methodist takes the patient (it now has free ICU beds).
+
+In **Are they telling the truth?**, switch **450358** to **protective**.
+
+> "Accepting a transfer costs a bed. The cheapest way to avoid one is to say
+> you are full. In an ordinary auction nobody can check."
+
+Same origin, **ICU bed / general / acuity 4**. Run it. Point at:
+- Methodist: *"we're down to our last one"*
+- the **challenge**: *"it accepted a different ICU transfer 1 minute ago. It
+  had one to give."*
+- the defence failing, **refusal struck out**, the argument map
+
+> "Nobody revealed a bed count. The claim was checked against what Methodist
+> itself agreed to a minute ago, on a record it cannot edit."
+
+Untick **Check refusals against the shared record** and run the acuity-4 case
+again: the same refusal is taken at face value. Tick it again.
+
+(Methodist never lies about an acuity-5 patient. That is a rule in the model,
+not luck.)
+
+### 5. Show the transfer in the database (1 min)
+
+**Hospital data** tab → **Transfers saved in the database** → **trace** on the
+last one: every agent's decision, the challenge, the allocation, the ledger
+block, the audit entries. In pgAdmin, `agent_decisions` and `challenges` show
+the same rows.
+
+### 6. Tamper, and get caught (1.5 min)
+
+**Let the reviewer do this.** In pgAdmin open `audit_log`, change any value in
+the `actor` column of an old row (e.g. to `nobody`), and save (F6).
+
+MAHROS → **Hospital data** → **Verify now**. The panel turns red and names
+the row: *"entry #N: contents changed: this row no longer matches its own hash"*.
+
+Put the value back and verify again: green.
+
+> "The app cannot edit these tables at all; it can only add rows. The owner can
+> edit them, as you just did, and the next check names the row."
+
+### 7. Reset (30 s)
+
+**Restore all to real data** (twice). Every hospital is back to what it
+reported. Nothing was deleted: the history of everything you just did is still
+in `audit_log` and `transfer_requests`.
 
 ---
 
-## If you only get 60 seconds
+## If something goes wrong
 
-Skip steps 1 and 2. Make a hospital protective, run one case, point at the
-challenge and the struck-out refusal, and say:
-
-> "Hospitals have a reason to refuse transfers they don't want. Our protocol lets
-> a refusal be challenged against a shared record, and the hospital has to
-> justify it. An honest refusal always can. A fabricated one can't. It recovers
-> about 40% of the damage that dishonest refusals do to the network, and it has
-> never wrongly accused a hospital that was telling the truth."
-
-That is the whole project in four sentences.
+| What you see | What to do |
+|---|---|
+| **saved to PostgreSQL** is red | `docker compose up -d`, then refresh |
+| No challenge appears in step 4 | Methodist did not take the acuity-5 patient. Check its ICU is at 100 in Hospital data, run step 4 again from origin 450076 |
+| pgAdmin asks for a password | `mahros-admin-local` |
+| Results tab empty | `python experiments/run_all.py 5` then `python experiments/build_dashboard.py` |
+| Anything else | `docker compose restart app`. The data is in the database, so nothing is lost |

@@ -484,6 +484,58 @@ class Store:
         return {"allocations": allocations, "counts": counts,
                 "transfers": totals["n"], "last_sim_minute": totals["last"]}
 
+    # -- Regional Monitor: where the network is running out ---------------- #
+    def bottlenecks(self) -> dict[str, Any]:
+        """What this session's transfers and the live occupancy say is scarce.
+
+        Plain counting, no model: which needs went unmet and why, which pools
+        are fullest network-wide, and which hospitals refused most. A
+        coordinator reads this to decide where to add capacity first.
+        """
+        with self.tx() as cur:
+            cur.execute("SELECT epoch FROM live_epochs ORDER BY epoch DESC LIMIT 1")
+            epoch = cur.fetchone()["epoch"]
+            cur.execute("""
+                SELECT resource_kind, specialty,
+                       count(*) AS requests,
+                       count(*) FILTER (WHERE outcome = 'failed') AS failed
+                FROM transfer_requests WHERE epoch = %s
+                GROUP BY resource_kind, specialty
+                ORDER BY failed DESC, requests DESC""", (epoch,))
+            needs = cur.fetchall()
+            cur.execute("""
+                SELECT failure_reason, count(*) AS n FROM transfer_requests
+                WHERE epoch = %s AND outcome = 'failed'
+                GROUP BY failure_reason ORDER BY n DESC""", (epoch,))
+            reasons = cur.fetchall()
+            cur.execute("""
+                SELECT kind, sum(capacity) AS capacity, sum(occupied) AS occupied,
+                       count(*) FILTER (WHERE capacity > 0 AND occupied >= capacity) AS full_hospitals,
+                       count(*) FILTER (WHERE capacity > 0) AS hospitals
+                FROM resources GROUP BY kind""")
+            pools = cur.fetchall()
+            cur.execute("""
+                SELECT d.hospital_id, h.name, count(*) AS refusals,
+                       count(*) FILTER (WHERE d.reason = 'at_self_protection_reserve') AS said_full
+                FROM agent_decisions d
+                JOIN transfer_requests t USING (request_id)
+                JOIN hospitals h ON h.hospital_id = d.hospital_id
+                WHERE t.epoch = %s AND d.action = 'refuse'
+                GROUP BY d.hospital_id, h.name ORDER BY refusals DESC LIMIT 5""", (epoch,))
+            refusers = cur.fetchall()
+        for p in pools:
+            p["occupancy"] = (p["occupied"] / p["capacity"]) if p["capacity"] else None
+        pools.sort(key=lambda p: -(p["occupancy"] or 0))
+        total = sum(n["requests"] for n in needs)
+        failed = sum(n["failed"] for n in needs)
+        headline = None
+        worst = next((n for n in needs if n["failed"]), None)
+        if worst:
+            headline = (f"{worst['failed']} of {failed} unplaced patients needed "
+                        f"{worst['resource_kind'].replace('_', ' ')} ({worst['specialty']}).")
+        return {"epoch": epoch, "requests": total, "failed": failed, "headline": headline,
+                "needs": needs, "reasons": reasons, "pools": pools, "refusers": refusers}
+
     # -- Data Integrity Agent findings on the real reports ----------------- #
     def flags_summary(self) -> dict[str, Any]:
         with self.tx() as cur:

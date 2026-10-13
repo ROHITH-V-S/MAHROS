@@ -458,6 +458,14 @@ def hospital_flags(hospital_id: str):
     return to_jsonable({"flags": STORE.hospital_flags(hospital_id)})
 
 
+@app.get("/api/bottlenecks")
+def bottlenecks():
+    """Regional Monitor: which needs go unmet, which pools are fullest."""
+    if (r := need_db()) is not None:
+        return r
+    return to_jsonable(STORE.bottlenecks())
+
+
 @app.get("/api/data-integrity")
 def data_integrity():
     """What the Data Integrity Agent found in the real HHS reports."""
