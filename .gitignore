@@ -22,3 +22,6 @@ results/*.png
 # platform build step. Committing it is what lets Vercel serve the results
 # page and Render serve the /dashboard tab.
 !results/dashboard.html
+
+# Local secrets for docker compose
+.env

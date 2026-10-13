@@ -17,6 +17,7 @@ Differences from the batch runner, all deliberate:
 from __future__ import annotations
 
 import random
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -97,6 +98,16 @@ class LiveNetwork:
 
         self.gen = PatientGenerator(cfg)
         self.history: list[dict] = []        # completed negotiations
+        #: PostgreSQL link (mahros.db.live_sync.DatabaseSync), or None when the
+        #: console runs in memory only. Set by `attach_database`.
+        self.sync = None
+        #: Transfers recorded in the database before this process started.
+        self.resumed_transfers = 0
+        self.resumed_awarded = 0
+        #: Why the database is not attached, when it should have been.
+        self.db_error: str | None = None
+        #: One change at a time: REST calls and the WebSocket share this network.
+        self.lock = threading.RLock()
         self._trace: list[TraceEvent] = []
         self._seq = 0
 
@@ -112,6 +123,17 @@ class LiveNetwork:
             ledger=self.ledger,
             observer=self._observe,
         )
+
+    # -- database ------------------------------------------------------------ #
+    def attach_database(self, sync) -> None:
+        """Make PostgreSQL the source of truth and resume its current session."""
+        self.sync = sync
+        sync.resume(self)
+        self.resumed_awarded = sum(h.accepted_count for h in self.hospitals.values())
+
+    @property
+    def db_mode(self) -> bool:
+        return self.sync is not None
 
     # -- glue expected by Hospital ----------------------------------------- #
     @property
@@ -152,8 +174,15 @@ class LiveNetwork:
                 filled += target
         return {"occupied_units": filled, "level": level}
 
-    def set_occupancy(self, hospital_id: str, resource: str, occupied: int) -> dict:
+    def set_occupancy(self, hospital_id: str, resource: str, occupied: int,
+                      actor: str | None = None) -> dict:
         """Directly set one pool's occupancy -- the 'what if' control."""
+        if self.sync is not None:
+            with self.lock:
+                self.sync.store.update_hospital(actor or "user:reviewer", hospital_id,
+                                                occupied={resource: occupied})
+                self.sync.pull(self)
+            return self.hospital_state(hospital_id)
         h = self.hospitals[hospital_id]
         pool = h.resources.pool(ResourceType(resource))
         if pool is None:
@@ -173,8 +202,22 @@ class LiveNetwork:
         acuity: int,
         patient_name: str = "",
         patient_note: str = "",
+        actor: str | None = None,
     ) -> dict:
-        """Run one full Contract Net negotiation and return every step of it."""
+        """Run one full Contract Net negotiation and return every step of it.
+
+        With a database attached, the current occupancy and behaviour are read
+        from it first and everything that happened is written back after. If
+        that write fails the exception propagates and nothing is shown as done.
+        """
+        with self.lock:
+            if self.sync is not None:
+                self.sync.pull(self)
+            return self._request_transfer(origin, resource, specialty, acuity,
+                                          patient_name, patient_note, actor)
+
+    def _request_transfer(self, origin, resource, specialty, acuity, patient_name,
+                          patient_note, actor) -> dict:
         if origin not in self.hospitals:
             raise KeyError(f"unknown hospital {origin}")
 
@@ -273,6 +316,11 @@ class LiveNetwork:
         else:
             result["failure_reason"] = req.failure_reason
 
+        if self.sync is not None:
+            from ..db.live_sync import ENGINE_ACTOR
+            result["db"] = self.sync.record(self, actor or ENGINE_ACTOR, result, req,
+                                            patient, steps)
+
         self.history.append({
             "request_id": req.request_id,
             "origin": origin,
@@ -303,7 +351,7 @@ class LiveNetwork:
         import math
         return max(60.0, self.rng.lognormvariate(math.log(mean_los), 0.45))
 
-    def auto_request(self) -> dict:
+    def auto_request(self, actor: str | None = None) -> dict:
         """Generate a clinically plausible escalation at a random hospital."""
         origin = self.rng.choice(list(self.hospitals))
         resource, specialty, acuity, _ = self.gen.escalation_profile()
@@ -315,6 +363,7 @@ class LiveNetwork:
             acuity=int(acuity),
             patient_name=patient.name,
             patient_note=patient.notes,
+            actor=actor,
         )
 
     # -- state views --------------------------------------------------------- #
@@ -346,7 +395,8 @@ class LiveNetwork:
 
     def state(self) -> dict:
         hosps = [self.hospital_state(h) for h in self.hospitals]
-        awarded = sum(1 for x in self.history if x["awarded"])
+        awarded = sum(1 for x in self.history if x["awarded"]) + self.resumed_awarded
+        negotiations = len(self.history) + self.resumed_transfers
         return {
             "scenario": self.scenario_name,
             "seed": self.seed,
@@ -360,9 +410,9 @@ class LiveNetwork:
             },
             "fairness": self.fairness.summary(),
             "totals": {
-                "negotiations": len(self.history),
+                "negotiations": negotiations,
                 "awarded": awarded,
-                "failed": len(self.history) - awarded,
+                "failed": negotiations - awarded,
                 "messages": self.bus.message_count,
                 "boundary_crossings": self.privacy.crossings,
                 "privacy_violations": len(self.privacy.violations),
@@ -370,6 +420,7 @@ class LiveNetwork:
             "ledger": self.ledger_state(),
             "decentralisation": self.bus.audit_no_global_view(set(self.hospitals)),
             "integrity": self.integrity(),
+            "db": self.db_state(),
             "resources": [r.value for r in ResourceType],
             "specialties": [s.value for s in Specialty],
         }
@@ -380,6 +431,23 @@ class LiveNetwork:
         hh = (total % 1440) // 60
         mm = total % 60
         return f"day {day + 1}  {hh:02d}:{mm:02d}"
+
+    def db_state(self) -> dict:
+        """Whether a database is attached, and what it says about its records."""
+        if self.sync is None:
+            return {"connected": False, "error": self.db_error}
+        try:
+            ledger = self.sync.store.verify_ledger(self.sync.epoch)
+            audit = self.sync.store.audit_verify()
+        except Exception as exc:              # the database went away mid-session
+            return {"connected": False, "error": str(exc)}
+        return {
+            "connected": True,
+            "epoch": self.sync.epoch,
+            "reference_week": self.sync.reference_week,
+            "ledger": ledger,
+            "audit": audit,
+        }
 
     def ledger_state(self) -> dict:
         v = self.ledger.verify()
@@ -405,6 +473,12 @@ class LiveNetwork:
     # -- demo controls -------------------------------------------------------- #
     def tamper(self) -> dict:
         """Forge a ledger entry so the audience can watch verification fail."""
+        if self.sync is not None:
+            return {"tampered": False,
+                    "message": ("The records live in PostgreSQL now. To test tamper "
+                                "detection, change any row of ledger_entries or "
+                                "audit_log in pgAdmin, then press Check records."),
+                    "ledger": self.ledger_state()}
         self.ledger.flush()
         for block in self.ledger.chain[1:]:
             if block.entries:
@@ -421,13 +495,16 @@ class LiveNetwork:
                 "message": "No sealed agreements yet — run a few transfers first.",
                 "ledger": self.ledger_state()}
 
-    def set_fairness(self, enabled: bool) -> dict:
+    def set_fairness(self, enabled: bool, actor: str | None = None) -> dict:
+        if self.sync is not None:
+            self.sync.store.audit_action(actor or "user:reviewer", "SET_FAIRNESS",
+                                         {"enabled": bool(enabled)})
         self.fairness_enabled = enabled
         self.negotiator.weights = ScoringWeights(fairness_enabled=enabled)
         return {"fairness_enabled": enabled}
 
     # -- behaviour controls: the part an audience remembers ---------------- #
-    def set_policy(self, hospital_id: str, policy: str) -> dict:
+    def set_policy(self, hospital_id: str, policy: str, actor: str | None = None) -> dict:
         """Change how one hospital behaves. This is the demo's turning point.
 
         Switch a hospital to `strategic` and it starts protecting its beds by
@@ -438,16 +515,25 @@ class LiveNetwork:
             raise KeyError(f"unknown hospital {hospital_id}")
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy}")
+        if self.sync is not None:
+            with self.lock:
+                self.sync.store.update_hospital(actor or "user:reviewer", hospital_id,
+                                                policy=policy)
+                self.sync.pull(self)
+            return {"hospital": hospital_id, "policy": policy}
         self.hospitals[hospital_id].policy = POLICIES[policy]()
         return {"hospital": hospital_id, "policy": policy}
 
-    def set_argumentation(self, enabled: bool) -> dict:
+    def set_argumentation(self, enabled: bool, actor: str | None = None) -> dict:
         """Turn the deliberation phase on or off.
 
         Off is a plain Contract Net: refusals are taken at face value, and a
         hospital that is not being straight simply gets away with it. This
         toggle is the ablation the paper reports, run live.
         """
+        if self.sync is not None:
+            self.sync.store.audit_action(actor or "user:reviewer", "SET_ARGUMENTATION",
+                                         {"enabled": bool(enabled)})
         self.argumentation_enabled = enabled
         self.negotiator.config.enable_argumentation = enabled
         return {"argumentation_enabled": enabled}

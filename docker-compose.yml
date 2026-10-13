@@ -1,0 +1,67 @@
+# MAHROS with its database.
+#
+#   docker compose up --build        then open http://localhost:8090
+#                                    pgAdmin (browse every table): http://localhost:5051
+#
+# Ports are deliberately unusual (8090 / 5051 / 5440) so this stack does not
+# collide with other projects on the same machine. Change them in .env.
+#
+# Two database logins, on purpose:
+#   mahros_admin  owns the schema; pgAdmin uses it (so a reviewer can try to
+#                 tamper with records and watch the check catch it)
+#   mahros_app    what the dashboard uses; may only change occupancy and
+#                 behaviour, and append records
+
+name: mahros-main
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mahros
+      POSTGRES_USER: mahros_admin
+      POSTGRES_PASSWORD: ${MAHROS_ADMIN_PASSWORD:-mahros-admin-local}
+    ports:
+      - "${MAHROS_DB_PORT:-5440}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mahros_admin -d mahros"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MAHROS_ADMIN_URL: postgresql://mahros_admin:${MAHROS_ADMIN_PASSWORD:-mahros-admin-local}@db:5432/mahros
+      MAHROS_APP_PASSWORD: ${MAHROS_APP_PASSWORD:-mahros-app-local}
+      MAHROS_DATABASE_URL: postgresql://mahros_app:${MAHROS_APP_PASSWORD:-mahros-app-local}@db:5432/mahros
+      HOST: 0.0.0.0
+      PORT: "8000"
+    # Schema and real data first (does nothing if already there), then the app.
+    command: sh -c "python -m mahros.db init && python -m mahros.server"
+    ports:
+      - "${MAHROS_APP_PORT:-8090}:8000"
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: reviewer@mahros.local
+      PGADMIN_DEFAULT_PASSWORD: ${MAHROS_PGADMIN_PASSWORD:-mahros-pgadmin-local}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "${MAHROS_PGADMIN_PORT:-5051}:80"
+    volumes:
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./docker/pgadmin/pgpass:/pgpass:ro
+
+volumes:
+  pgdata:

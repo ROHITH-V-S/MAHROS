@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "MAHROS database",
+      "Group": "MAHROS",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "mahros",
+      "Username": "mahros_admin",
+      "PassFile": "/pgpass",
+      "SSLMode": "prefer"
+    }
+  }
+}

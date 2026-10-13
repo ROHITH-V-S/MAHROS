@@ -22,6 +22,8 @@ dependencies = [
 demo = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 # Charts and results tables for the paper.
 analysis = ["numpy>=1.24", "pandas>=2.0", "matplotlib>=3.7"]
+# PostgreSQL: the live console's database, audit log and records.
+db = ["psycopg[binary]>=3.1"]
 # On-chain audit against a local Hardhat/Anvil node (falls back to the hash chain).
 chain = ["web3>=6.0"]
 # Real asymmetric signatures for attested refusals. Without this the
@@ -45,6 +47,8 @@ include = ["mahros*"]
 [tool.setuptools.package-data]
 "mahros.server" = ["static/*.html"]
 "mahros.calibration" = ["data/*.json"]
+"mahros.db" = ["schema.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"

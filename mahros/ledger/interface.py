@@ -256,6 +256,26 @@ class HashChainLedger(LedgerBackend):
         if self._pending:
             self._seal_pending()
 
+    def load_blocks(self, blocks: list[Block]) -> None:
+        """Replace this chain with stored blocks (e.g. read back from the database).
+
+        Rebuilds the read-side indices from the entries, so a challenge after a
+        restart sees exactly the evidence it would have seen before it. The
+        blocks are taken as stored -- `verify()` is what checks them.
+        """
+        self.chain = list(blocks)
+        self._pending = []
+        self._by_receiver = {}
+        self._by_refuser = {}
+        self._record_count = 0
+        for block in self.chain[1:]:
+            for entry in block.entries:
+                self._record_count += 1
+                if entry.get("kind") == "refusal":
+                    self._by_refuser.setdefault(entry["hospital"], []).append(entry)
+                elif "receiver" in entry:
+                    self._by_receiver.setdefault(entry["receiver"], []).append(entry)
+
     # -- verification ------------------------------------------------------ #
     def verify(self) -> dict[str, Any]:
         """Independent re-derivation of every link. Any edit breaks this."""
