@@ -1,0 +1,122 @@
+{
+  "source": {
+    "dataset": "Acute Care Hospital Transfers by Major Diagnostic Category (MDC)",
+    "publisher": "California Department of Health Care Access and Information (HCAI)",
+    "underlying": "HCAI Patient Discharge Data (PDD)",
+    "coverage": "2021-01-01 to 2021-12-31",
+    "licence": "Creative Commons Attribution",
+    "page": "https://data.chhs.ca.gov/dataset/acute-care-hospital-transfers-by-major-diagnostic-category-mdc",
+    "file": "https://data.chhs.ca.gov/dataset/3f169603-e8f5-488d-bbbe-22c2c9c98b60/resource/fb239b03-d700-475c-9ef3-a4152df614f8/download/transfer-encounters.xlsx",
+    "suppression": "Cells under 11 are published as 'Less than 11'; stored as null."
+  },
+  "transfers_total": 37439,
+  "transfer_rate_of_discharges": 0.01601,
+  "by_mdc": {
+    "Diseases & Disorders of the Circulatory System": {
+      "transfers": 9468,
+      "share_of_discharges_transferred": 0.0293487661
+    },
+    "Infectious & Parasitic Diseases, Systemic or Unspecified Sites": {
+      "transfers": 6887,
+      "share_of_discharges_transferred": 0.0248632647
+    },
+    "Diseases & Disorders of the Respiratory System": {
+      "transfers": 3914,
+      "share_of_discharges_transferred": 0.0165227156
+    },
+    "Diseases & Disorders of the Nervous System": {
+      "transfers": 3425,
+      "share_of_discharges_transferred": 0.0210569676
+    },
+    "Diseases & Disorders of the Musculoskeletal System & Connective Tissue": {
+      "transfers": 2146,
+      "share_of_discharges_transferred": 0.011135557
+    },
+    "Diseases & Disorders of the Digestive System": {
+      "transfers": 2045,
+      "share_of_discharges_transferred": 0.0096184599
+    },
+    "Transplants and Tracheostomies (PRE-MDC)": {
+      "transfers": 1806,
+      "share_of_discharges_transferred": 0.1335107563
+    },
+    "Diseases & Disorders of the Hepatobiliary System & Pancreas": {
+      "transfers": 1508,
+      "share_of_discharges_transferred": 0.0158907459
+    },
+    "Pregnancy, Childbirth & the Puerperium": {
+      "transfers": 1304,
+      "share_of_discharges_transferred": 0.0035932071
+    },
+    "Diseases & Disorders of the Kidney & Urinary Tract": {
+      "transfers": 1174,
+      "share_of_discharges_transferred": 0.0103222403
+    },
+    "Endocrine, Nutritional & Metabolic Diseases & Disorders": {
+      "transfers": 822,
+      "share_of_discharges_transferred": 0.0082475468
+    },
+    "Injuries, Poisonings & Toxic Effects of Drugs": {
+      "transfers": 565,
+      "share_of_discharges_transferred": 0.0149107991
+    },
+    "Diseases & Disorders of the Skin, Subcutaneous Tissue & Breast": {
+      "transfers": 435,
+      "share_of_discharges_transferred": 0.0087438943
+    },
+    "Myeloproliferative Diseases & Disorders, Poorly Differentiated Neoplasms": {
+      "transfers": 416,
+      "share_of_discharges_transferred": 0.0189374972
+    },
+    "Multiple Significant Trauma": {
+      "transfers": 381,
+      "share_of_discharges_transferred": 0.0404415667
+    },
+    "Diseases & Disorders of Blood, Blood Forming Organs, Immunologic Disorders": {
+      "transfers": 344,
+      "share_of_discharges_transferred": 0.0133302333
+    },
+    "Alcohol/Drug Use & Alcohol/Drug Induced Organic Mental Disorders": {
+      "transfers": 198,
+      "share_of_discharges_transferred": 0.0070153061
+    },
+    "Factors Influencing Health Status & Other Contacts with Health Services": {
+      "transfers": 131,
+      "share_of_discharges_transferred": 0.0107315475
+    },
+    "Diseases & Disorders of the Ear, Nose, Mouth & Throat": {
+      "transfers": 123,
+      "share_of_discharges_transferred": 0.0077543815
+    },
+    "Diseases & Disorders of the Female Reproductive System": {
+      "transfers": 96,
+      "share_of_discharges_transferred": 0.0043095708
+    },
+    "Mental Diseases & Disorders": {
+      "transfers": 77,
+      "share_of_discharges_transferred": 0.0067692308
+    },
+    "Newborns & Other Neonates with Conditions Originating in Perinatal Period": {
+      "transfers": 57,
+      "share_of_discharges_transferred": 0.0415754923
+    },
+    "Diseases & Disorders of the Male Reproductive System": {
+      "transfers": 51,
+      "share_of_discharges_transferred": 0.0061460593
+    },
+    "Burns": {
+      "transfers": 33,
+      "share_of_discharges_transferred": 0.0171073095
+    },
+    "Diseases & Disorders of the Eye": {
+      "transfers": 33,
+      "share_of_discharges_transferred": 0.0098920863
+    }
+  },
+  "by_age_overall": {
+    "0 to 18": 407,
+    "19 to 34": 3080,
+    "35 to 64": 14484,
+    "65+": 19738
+  }
+}

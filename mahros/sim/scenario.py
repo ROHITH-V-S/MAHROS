@@ -79,6 +79,10 @@ class ScenarioConfig:
     #: simulator's native ~2.1 days; see real_network.LOS_SCALE for why that
     #: matters. Synthetic scenarios keep 1.0 and are bit-identical to before.
     los_scale: float = 1.0
+    #: Which patients need transfer, and for what. "tuned" is the original
+    #: guessed mix (synthetic scenarios, bit-identical). "california_2021" is
+    #: taken from 37,439 real transfers; see mahros/calibration/case_mix.py.
+    case_mix: str = "tuned"
 
     @property
     def is_real(self) -> bool:
@@ -244,10 +248,29 @@ _ESCALATION_PROFILES: list[tuple[ResourceType, Specialty, tuple[int, int], float
     (ResourceType.VENTILATOR, Specialty.GENERAL,   (4, 5), 2880),
     (ResourceType.HDU_BED,    Specialty.GENERAL,   (2, 3), 2160),
     (ResourceType.HDU_BED,    Specialty.OBSTETRIC, (3, 4), 1440),
+    # Added with the observed case-mix; zero weight in the tuned mix, so the
+    # synthetic scenarios draw exactly what they always drew.
+    (ResourceType.ICU_BED,    Specialty.CARDIAC,   (3, 5), 3600),
+    (ResourceType.ICU_BED,    Specialty.BURNS,     (4, 5), 4320),
 ]
 
-# Relative frequency of each profile.
-_PROFILE_WEIGHTS = [0.20, 0.08, 0.07, 0.12, 0.10, 0.09, 0.11, 0.15, 0.08]
+#: Names for the profiles above, in the same order (used by the observed mix).
+PROFILE_KEYS = ["icu_general", "icu_neuro", "icu_paediatric", "or_trauma", "or_general",
+                "cath_cardiac", "ventilator", "hdu_general", "hdu_obstetric",
+                "icu_cardiac", "icu_burns"]
+
+# Relative frequency of each profile: the original tuned guess.
+_PROFILE_WEIGHTS = [0.20, 0.08, 0.07, 0.12, 0.10, 0.09, 0.11, 0.15, 0.08, 0.0, 0.0]
+
+
+def profile_weights(case_mix: str) -> list[float]:
+    if case_mix == "tuned":
+        return _PROFILE_WEIGHTS
+    if case_mix == "california_2021":
+        from ..calibration.case_mix import observed_weights
+        w = observed_weights()
+        return [w.get(k, 0.0) for k in PROFILE_KEYS]
+    raise ValueError(f"unknown case mix {case_mix!r}")
 
 
 class PatientGenerator:
@@ -255,6 +278,7 @@ class PatientGenerator:
         self.cfg = cfg
         self.rng = random.Random(cfg.seed + 9973)
         self._n = 0
+        self._weights = profile_weights(cfg.case_mix)
 
     def demographic(self) -> DemographicGroup:
         rural = self.rng.random() < self.cfg.rural_fraction
@@ -287,7 +311,7 @@ class PatientGenerator:
 
     def escalation_profile(self) -> tuple[ResourceType, Specialty, Acuity, float]:
         resource, specialty, (lo, hi), mean_los = self.rng.choices(
-            _ESCALATION_PROFILES, weights=_PROFILE_WEIGHTS, k=1
+            _ESCALATION_PROFILES, weights=self._weights, k=1
         )[0]
         acuity = Acuity(self.rng.randint(lo, hi))
         los = max(60.0, self.rng.lognormvariate(math.log(mean_los), 0.45))
@@ -411,6 +435,7 @@ def _real(name: str, week: str, horizon_days: float = 14,
     return ScenarioConfig(
         name=name, real_metro=metro, real_week=week,
         horizon_hours=24 * horizon_days, los_scale=LOS_SCALE,
+        case_mix="california_2021",
         capacity_scale=capacity_scale, escalation_prob=escalation_prob,
         # Real coordinates set the geography; region_km is unused but kept
         # truthful for anything that reports it.
