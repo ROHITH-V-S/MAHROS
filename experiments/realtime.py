@@ -163,8 +163,8 @@ def main(scenario: str = "houston_surge", days: float = 4) -> int:
     print(f"\n  {'-' * 76}")
     print(f"  worst p99 across every configuration: {worst:.2f} ms "
           f"({BUDGET_MS / worst:.0f}x inside the {BUDGET_MS:.0f} ms budget)")
-    print(f"  for comparison, the phone tree spends 68.3 MINUTES of coordinator")
-    print(f"  time per transfer -- about {68.3 * 60_000 / worst:,.0f}x this.")
+    # (No hard-coded phone-tree comparison here: the coordinator minutes it
+    # spends are measured by run_all.py and quoted from results in RESULTS.md.)
     print(f"\n  Caveat, stated rather than buried: single process, in memory, no")
     print(f"  network, no TLS, no persistence. A deployment adds a round trip per")
     print(f"  hospital and a durable ledger write. This shows the protocol is not")
