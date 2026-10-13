@@ -281,3 +281,37 @@ def test_central_concentrates_decisions_and_mahros_does_not():
     # In MAHROS each hospital brokers only its own patients' transfers.
     assert mahros.decision_concentration < 0.5
     assert mahros.disclosure_concentration < 0.5
+
+
+def test_privacy_scrub_leaves_system_identifiers_alone():
+    """A digit-only request id looks like a phone number to the scrubber.
+
+    It used to become 'req-<PHONE>', so every such request shared one key in
+    each hospital's memory and results varied from run to run.
+    """
+    from mahros.privacy.anonymizer import TokenizingAnonymizer
+    clean = TokenizingAnonymizer().sanitize_outbound(
+        {"request_id": "req-1234567890", "patient_ref": "pt_1234567890123456",
+         "notes": "call +91 9876543210"})
+    assert clean["request_id"] == "req-1234567890"
+    assert clean["patient_ref"] == "pt_1234567890123456"
+    assert "notes" not in clean
+
+
+def test_same_seed_same_result_in_a_fresh_process():
+    """Reproducibility across processes, on the path that used to break it."""
+    import subprocess
+    import sys
+    code = (
+        "import copy\n"
+        "from mahros.sim import metrics as M\n"
+        "from mahros.sim.runner import RunConfig, SimulationRunner\n"
+        "from mahros.sim.scenario import SCENARIOS\n"
+        "sc = copy.deepcopy(SCENARIOS['houston_surge']); sc.horizon_hours = 48; sc.seed = 42\n"
+        "r = SimulationRunner(RunConfig(scenario=sc, strategy='mahros', seed=42,"
+        " collusion_size=6, enable_attestation=True, attestation_deterrence=0.8,"
+        " spot_check_rate=0.05)).run()\n"
+        "print(M.compute(r).success_rate, len(r.requests))\n")
+    outs = {subprocess.run([sys.executable, "-c", code], capture_output=True,
+                           text=True, check=True).stdout for _ in range(3)}
+    assert len(outs) == 1, outs

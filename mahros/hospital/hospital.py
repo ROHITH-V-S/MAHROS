@@ -7,6 +7,7 @@ phone-tree baseline realistic and what MAHROS actually relieves).
 
 from __future__ import annotations
 
+import hashlib
 import random
 from dataclasses import dataclass, field
 
@@ -61,7 +62,12 @@ class Hospital:
         # How this hospital decides what to *say*. Honest by default, so every
         # pre-existing result is unchanged unless an experiment opts in.
         self.policy: BiddingPolicy = policy or HonestPolicy()
-        self._rng = random.Random(hash((cfg.hospital_id, seed)) & 0xFFFFFFFF)
+        # Seeded from a stable digest. Python's hash() of a string changes
+        # from one process to the next, so seeding with it made every run
+        # that draws from this stream (attestation, colluding hospitals)
+        # unrepeatable across processes, despite a fixed seed.
+        self._rng = random.Random(int(hashlib.sha256(
+            f"{cfg.hospital_id}|{seed}".encode()).hexdigest()[:8], 16))
         #: request_id -> what we reported and what was actually true. Private;
         #: the only thing that ever reads it is this hospital's own defence.
         self._statements: dict[str, ReportedAssessment] = {}

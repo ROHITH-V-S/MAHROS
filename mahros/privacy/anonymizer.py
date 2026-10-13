@@ -52,6 +52,13 @@ class TokenizingAnonymizer:
 
     #: fields that must never appear in an outbound message
     FORBIDDEN = {"name", "mrn", "phone", "patient_id", "age", "address", "notes", "group"}
+    #: System-generated identifiers and codes. They are not free text and must
+    #: pass through exactly: a request id like "req-1234567890" matches the
+    #: phone-number pattern, and scrubbing it to "req-<PHONE>" made every such
+    #: request share one key in each hospital's memory -- a hospital asked to
+    #: defend one refusal could look up another request's statement, and
+    #: because ids are random, results varied from run to run.
+    IDENTIFIERS = {"request_id", "patient_ref", "origin", "resource", "specialty"}
 
     def __init__(self, secret: bytes = b"mahros-dev-key-not-for-production") -> None:
         self._secret = secret
@@ -75,7 +82,10 @@ class TokenizingAnonymizer:
         for k, v in payload.items():
             if k in self.FORBIDDEN:
                 continue
-            clean[k] = self.scrub(v) if isinstance(v, str) else v
+            if k in self.IDENTIFIERS:
+                clean[k] = v
+            else:
+                clean[k] = self.scrub(v) if isinstance(v, str) else v
         return clean
 
 
