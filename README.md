@@ -161,8 +161,8 @@ refusal into a claim that can be tested:
   will sign is a swept parameter, not an assumption.
 - **Spot checks** ask a sample of refusals to certify themselves with no
   evidence against them, because a coordinated cartel never triggers a
-  reactive check. **Risk-based** spot checks check hospitals already caught
-  more often.
+  reactive check. We also tested checking hospitals already caught more
+  often: at the same checking effort it was no better (see Results).
 
 **Grounding.** No public dataset records transfer refusals, so the behaviour is
 simulated. Two things are real: hospitals' own capacity reports are often
@@ -189,6 +189,10 @@ Every number below is generated from `results/*.json` by
 - MAHROS places 13.0 percentage points more patients in time than a phone tree given perfect information (p < 0.0001).
 - Against optimisers that see every hospital's true occupancy: -0.3 pts vs central greedy, +0.4 pts vs batched optimal; equivalent within ±2 points: yes / yes.
 - On an honest network a shared registry ties MAHROS (-0.0 pts, Holm p = 0.8980).
+- With half the hospitals refusing falsely, success falls to 63.7% without checking and holds at 86.5% with it.
+- Requiring hospitals to sign their refusals gives 62.3% to 86.5% success depending on how often a liar refuses to sign (no checking: 63.7%).
+- A cartel of 6 cuts success to 79.2%; 15% random spot checks bring it back to 90.8%.
+- Checking hospitals already caught more often is no better than uniform 15% spot checks at similar effort (+0.5 pts, p = 0.6581, 111% of the checks).
 - Simulated occupancy is within 3.8 points of what Houston's hospitals reported (R² 0.95), and 3.0 points for Phoenix (R² 0.97), which was not tuned.
 - 5.4% of Houston's weekly capacity reports and 0.2% of Phoenix's are impossible or look copied (20 of 27 and 3 of 30 hospitals have at least one report that cannot be right).
 

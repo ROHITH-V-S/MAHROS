@@ -57,8 +57,23 @@ Reliability varies more than tenfold between the two regions, so neither rate is
 
 ## 5. When hospitals refuse falsely
 
-*Not built yet: run `python experiments/adversarial.py 6`.*
+`houston_surge`, 6 seeds. Protective hospitals say "full" for patients they do not want (never for acuity 5). Checking ON is the unattested protocol, which assumes a liar cannot defend itself; see section 7 for the version without that assumption.
 
+| Protective | Checking OFF | Checking ON | Share of the loss recovered | False refusals | Overruled | False accusations |
+|---|---|---|---|---|---|---|
+| 0% | 96.4% | 95.5% | — | 0 | 0.0 | 0.0 |
+| 25% | 83.8% | 91.6% | 62% | 3657 | 342.0 | 0.0 |
+| 50% | 63.7% | 86.5% | 70% | 7898 | 520.8 | 0.0 |
+| 75% | 46.8% | 83.1% | 73% | 10700 | 648.2 | 0.0 |
+| 100% | 26.6% | 80.5% | 77% | 14864 | 784.5 | 0.0 |
+
+Safety check (cautious hospitals refuse more, but truthfully):
+
+| Network | Challenges | Overruled | False accusations |
+|---|---|---|---|
+| all honest | 4272 | 0.0 | 0.0 |
+| 50% defensive | 9915 | 0.0 | 0.0 |
+| 25% strategic + 25% defensive | 9888 | 413.2 | 0.0 |
 
 ## 6. Why not a shared registry? The same lies, both methods
 
@@ -67,16 +82,54 @@ Reliability varies more than tenfold between the two regions, so neither rate is
 
 ## 7. Signed refusals: removing the "liars can't defend" assumption
 
-*Not built yet: run `python experiments/attestation.py 6`.*
+`houston_surge`, 50% protective, 6 seeds; signatures: ed25519. Deterrence = probability a lying hospital declines to sign. Nothing measures it, so the whole range is the result.
 
+| Arm | Success | False accusations |
+|---|---|---|
+| No checking (plain Contract Net) | 63.7% | 0.0 |
+| Unattested (liar assumed unable to defend) | 86.5% | 0.0 |
+| Signed, deterrence 0.00 | 62.3% | 0.0 |
+| Signed, deterrence 0.25 | 82.0% | 0.0 |
+| Signed, deterrence 0.50 | 85.6% | 0.0 |
+| Signed, deterrence 0.75 | 86.6% | 0.0 |
+| Signed, deterrence 0.90 | 86.7% | 0.0 |
+| Signed, deterrence 1.00 | 86.5% | 0.0 |
+
+Endpoints: deterrence 1.0 vs unattested +0.0 pts (p = 1.0000); deterrence 0.0 vs no checking -1.4 pts (p = 0.2252). Audit-referral false-positive rate: 1.10%.
 
 ## 8. Collusion, and the checks that catch it
 
-*Not built yet: run `python experiments/collusion.py 6`.*
+A cartel abstains together, so no single refusal is ever contradicted.
 
+| Cartel size | Success |
+|---|---|
+| 0 | 95.5% |
+| 3 | 89.1% |
+| 6 | 79.2% |
+| 9 | 70.5% |
 
-*Not built yet: run `python experiments/reputation.py 6`.*
+Random spot checks (signed protocol):
 
+| Spot-check rate | Honest network | 6 colluding | Checks | Cartel overruled | False accusations |
+|---|---|---|---|---|---|
+| 0% | 95.5% | 79.2% | 0 | 61.0 | 0.0 |
+| 5% | 95.5% | 88.6% | 1523 | 345.7 | 0.0 |
+| 15% | 95.5% | 90.8% | 3589 | 453.0 | 0.0 |
+| 30% | 95.5% | 91.4% | 6489 | 544.2 | 0.0 |
+
+Risk-based spot checks (hospitals already caught are checked more often):
+
+| Arm | Honest network | 6 colluding | Checks spent | Cartel overruled | False accusations |
+|---|---|---|---|---|---|
+| no spot checks | 95.5% | 80.1% | 0 | 65.7 | 0.0 |
+| uniform 5% | 95.5% | 88.6% | 1523 | 345.7 | 0.0 |
+| uniform 10% | 95.5% | 89.9% | 2571 | 414.8 | 0.0 |
+| uniform 15% | 95.5% | 90.8% | 3589 | 453.0 | 0.0 |
+| 5%, 50% once caught | 95.5% | 91.3% | 3976 | 616.3 | 0.0 |
+| 5%, 100% once caught | 95.5% | 91.3% | 7010 | 738.2 | 0.0 |
+
+- **5%, 50% once caught** vs uniform 15%: +0.5 pts (p = 0.6581), using 111% of the checks.
+- **5%, 100% once caught** vs uniform 15%: +0.5 pts (p = 0.5882), using 195% of the checks.
 
 ## 9. Replication: Phoenix, 30 real hospitals, nothing re-tuned
 

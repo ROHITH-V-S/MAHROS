@@ -380,11 +380,14 @@ def main() -> int:
             if v:
                 add(f"- **{label}** vs uniform 15%: {pts(v['diff'])} ({pval(v['p'])}), using "
                     f"{v['checks_ratio']:.0%} of the checks.")
-        v = rep["arms"]["5%, 100% once caught"].get("vs_uniform_15")
+        v = rep["arms"]["5%, 50% once caught"].get("vs_uniform_15")
         if v:
+            verdict = ("better" if v["diff"] > 0 and v["p"] < 0.05 else
+                       "no better" if v["p"] >= 0.05 else "worse")
             headline["reputation"] = (
-                f"Checking hospitals already caught more often: {pts(v['diff'])} against "
-                f"uniform 15% spot checks, using {v['checks_ratio']:.0%} of the checks.")
+                f"Checking hospitals already caught more often is {verdict} than uniform "
+                f"15% spot checks at similar effort ({pts(v['diff'])}, {pval(v['p'])}, "
+                f"{v['checks_ratio']:.0%} of the checks).")
     else:
         add(missing("reputation.py 6"))
     add("")
