@@ -337,6 +337,21 @@ class HashChainLedger(LedgerBackend):
         rows.sort(key=lambda e: e.get("agreed_at", 0.0), reverse=True)
         return rows
 
+    def accepted_between(self, hospital: str, start: float, end: float,
+                         resource: str | None = None) -> list[dict[str, Any]]:
+        """Agreements where `hospital` was the receiver with start < agreed_at <= end.
+
+        Oldest first. Entries are appended in simulation order, so the index is
+        already sorted by time and a window is two binary searches -- unlike
+        `accepted_by`, which filters and sorts the hospital's whole history.
+        """
+        rows = self._by_receiver.get(hospital, [])
+        key = lambda e: e.get("agreed_at", 0.0)  # noqa: E731
+        lo = bisect.bisect_right(rows, start, key=key)
+        hi = bisect.bisect_right(rows, end, key=key)
+        return [e for e in rows[lo:hi]
+                if resource is None or e.get("resource") == resource]
+
     # -- io ---------------------------------------------------------------- #
     def export(self, path: str) -> None:
         self.flush()

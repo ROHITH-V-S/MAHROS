@@ -406,8 +406,14 @@ class AttestationAuthority:
             # nothing.
             if att.asserted != NO_UNIT_AVAILABLE:
                 continue
-            rows = ledger.accepted_by(
-                att.hospital, since=att.at, resource=att.resource)
+            # Newest first within the window, as before; the window lookup is
+            # indexed (scanning each hospital's whole history per attestation
+            # made the calibration run take hours).
+            if hasattr(ledger, "accepted_between"):
+                rows = reversed(ledger.accepted_between(
+                    att.hospital, att.at, att.at + window, resource=att.resource))
+            else:
+                rows = ledger.accepted_by(att.hospital, since=att.at, resource=att.resource)
             for row in rows:
                 gap = row.get("agreed_at", 0.0) - att.at
                 if not (0 < gap <= window):

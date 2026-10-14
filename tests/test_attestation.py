@@ -283,3 +283,21 @@ def test_signatures_are_cheap_enough_to_be_live(auth):
     # 5 ms is 24,000x inside it. (500 us used to be the bound; it failed on the
     # same machine once Docker's VM was running alongside.)
     assert per_us < 5000, f"{per_us:.0f} us per verification is too slow"
+
+
+def test_indexed_audit_finds_exactly_what_the_full_scan_found():
+    """The audit's window lookup is indexed; it must not change a single referral."""
+    import time
+    result, _ = _short_run(enable_attestation=True, attestation_deterrence=1.0)
+    authority, ledger = result.attestation, result.ledger
+    t0 = time.perf_counter()
+    fast = authority.audit(ledger, 0.0)
+    t_fast = time.perf_counter() - t0
+
+    class FullScan:            # the old path: no accepted_between
+        def accepted_by(self, *a, **k):
+            return ledger.accepted_by(*a, **k)
+    slow = authority.audit(FullScan(), 0.0)
+    key = lambda r: (r.attestation.digest, r.adjacent_agreement, round(r.minutes_after, 6))
+    assert sorted(map(key, fast)) == sorted(map(key, slow))
+    assert t_fast < 5.0
