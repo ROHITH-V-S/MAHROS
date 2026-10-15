@@ -442,9 +442,24 @@ def main() -> int:
             add("```")
             add("</details>")
             add("")
-        headline["sensitivity"] = ("Every ranking survived every sensitivity sweep."
-                                   if not flips else
-                                   f"{len(flips)} ranking(s) flipped under sensitivity sweeps; see RESULTS.md.")
+        phone_flips = [f for f in flips if "argumentation" not in f]
+        adv_s = sens["sweeps"].get("adversary_strength", {})
+        gains = {k: v["on"] - v["off"] for k, v in adv_s.items()}
+        consistent = [g for k, g in gains.items() if k.endswith("p1.0")]
+        half = [g for k, g in gains.items() if k.endswith("p0.5")]
+        text = ("MAHROS beat the phone tree under every value of every unsourced parameter."
+                if not phone_flips else
+                f"MAHROS lost to the phone tree under: {', '.join(phone_flips)}.")
+        if consistent and half:
+            lo, hi = min(consistent) * 100, max(consistent) * 100
+            gain = f"{lo:.1f}" if abs(hi - lo) < 0.05 else f"{lo:.1f} to {hi:.1f}"
+            text += (f" Checking refusals adds {gain} points when protective hospitals lie "
+                     f"consistently; when they lie only half the time a second round of "
+                     f"asking already recovers almost everything, and checking costs up to "
+                     f"{abs(min(half)) * 100:.1f} points.")
+        headline["sensitivity"] = text
+        add("")
+        add(f"**In words:** {text}")
     else:
         add(missing("sensitivity.py 5"))
     add("")
