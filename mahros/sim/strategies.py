@@ -188,7 +188,7 @@ class PhoneTreeStrategy(Strategy):
     #: stale information. No published source gives this rate, so the headline
     #: comparison uses 0.0 -- a phone tree with perfect information, the most
     #: favourable baseline we can defend. 0.05-0.40 is swept in
-    #: experiments/sensitivity.py (it used to default to an unsourced 0.25).
+    #: experiments/sensitivity.py.
     STALE_INFO_PROB = 0.0
 
     def __init__(self, ctx: StrategyContext) -> None:

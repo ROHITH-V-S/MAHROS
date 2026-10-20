@@ -6,9 +6,8 @@ where it came from and how far it was tested.
 - **What is real** (hospitals, beds, specialties, roads, occupancy, case-mix)
   is in [DATA_PROVENANCE.md](DATA_PROVENANCE.md), generated from the code.
 - **What the model produces** (every result) is in [RESULTS.md](RESULTS.md),
-  generated from `results/*.json`. This file quotes no results on purpose:
-  numbers copied by hand into several documents are how they used to
-  contradict each other.
+  generated from `results/*.json`. This file quotes no results on purpose,
+  so no two documents can disagree about a number.
 
 ## Tags
 
@@ -46,7 +45,7 @@ a headline result. Its tier tables are in `mahros/sim/scenario.py`.
 | Starting occupancy | reported week | **[OBSERVED]** / **[DERIVED]** | Warm start: ward, step-down and ICU filled to the reported week; procedure rooms empty (`warm_start.py`) |
 | Remaining stay of starting patients | length-biased lognormal | **[DERIVED]** | lognormal(μ+σ², σ) × U(0,1); tested in `tests/test_warm_start.py` |
 | Mean length of stay | ~4.6 days | **[CITED]** | US acute average; LOS is scaled to it, not measured per hospital |
-| Escalation probability | 0.14 of admissions | **[CITED]**, with a caveat | Produces 4.5% of admissions as transfer requests on the real Houston network, the published US figure [R3]. California 2021 shows **1.6%** of discharges transferred, so the model is on the high side; swept 0.07–0.21. (The scenario used to *declare* 0.18 while real networks silently ran on 0.14; the value in use is now the value declared.) |
+| Escalation probability | 0.14 of admissions | **[CITED]**, with a caveat | Produces 4.5% of admissions as transfer requests on the real Houston network, the published US figure [R3]. California 2021 shows **1.6%** of discharges transferred, so the model is on the high side; swept 0.07–0.21. |
 | Escalation delay | lognormal, mean 7 h | **[UNSOURCED]** | Swept 4–12 h |
 | Diurnal arrival curve | ±45%, peak 14:00 | **[UNSOURCED]** | Not swept: it shapes when requests arrive, equally for every method |
 
@@ -113,11 +112,11 @@ What happens today: a coordinator rings hospitals one at a time, nearest first.
 | Coordinators | 1 per 150 inpatient beds | **[ASSUMED]** |
 | **Stale information** | **0.0** (headline) | **[UNSOURCED]**; 0.05–0.40 swept |
 
-**Why staleness is zero in the headline.** It used to be 0.25: a quarter of
-the hospitals that said "yes" were lost because the coordinator was working
-from stale information. No source gives that rate, and it made the baseline
-weaker by choice. The headline now gives the phone tree perfect information,
-the strongest version we can defend; 0.25 is reported as a sensitivity row.
+**Why staleness is zero in the headline.** Stale information (a "yes" lost
+because the coordinator was working from an out-of-date whiteboard) would
+weaken the baseline, and no source gives its rate. The headline therefore
+gives the phone tree perfect information, the strongest version we can
+defend; non-zero staleness is reported as a sensitivity row.
 
 ## 7. Scoring weights **[TUNED]**
 
@@ -176,17 +175,14 @@ cited as precedent, not as applicable law.
   mortality model.
 - **Texas case-mix.** The case-mix is Californian; no Texas source exists.
 
-Modelled since earlier versions: collusion (`experiments/collusion.py`) and a
-reputation term, risk-based spot checks (`experiments/reputation.py`).
+Also modelled: collusion (`experiments/collusion.py`) and risk-based spot
+checks (`experiments/reputation.py`).
 
 ## 10. Reproducibility
 
 Every run is determined by `(scenario, seed)` and gives the same result in any
-process. That was **not** true for runs with attestation until 2026-10-13: two
-bugs (request ids scrubbed by the privacy layer, a hospital RNG seeded with
-Python's per-process `hash()`) made them vary. Both are fixed and guarded by
-`tests/test_core.py::test_same_seed_same_result_in_a_fresh_process`. Every
-number in RESULTS.md was produced after the fix.
+process, guarded by
+`tests/test_core.py::test_same_seed_same_result_in_a_fresh_process`.
 
 ## References
 

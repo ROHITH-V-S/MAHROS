@@ -48,14 +48,6 @@ class ScoredBid:
     fairness_term: float
     slack_minutes: float          # how much of the safe window is left on arrival
 
-    def explain(self) -> str:
-        return (
-            f"{self.bid.bidder}: score={self.score:.3f} "
-            f"(time={self.time_term:.2f} cap={self.capability_term:.2f} "
-            f"strain={self.strain_term:.2f} fair={self.fairness_term:+.2f}) "
-            f"ETA={self.bid.time_to_care:.0f}min slack={self.slack_minutes:.0f}min"
-        )
-
 
 def score_bids(
     req: TransferRequest,

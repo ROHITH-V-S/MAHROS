@@ -105,7 +105,7 @@ def main(scenario_name: str = "houston_baseline", n_seeds: int = 5) -> int:
                              capacity_scale=sc.capacity_scale)
     seeds = [42 + i * 101 for i in range(n_seeds)]
 
-    print(f"\nValidating simulated occupancy against reported occupancy")
+    print("\nValidating simulated occupancy against reported occupancy")
     print(f"  network : {net.label}, {net.n_hospitals} real hospitals")
     print(f"  week    : {net.week}")
     print(f"  seeds   : {n_seeds}   burn-in: {BURN_IN:.0%}\n")

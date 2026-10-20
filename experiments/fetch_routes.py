@@ -26,7 +26,6 @@ from mahros.calibration.routing import (  # noqa: E402
     HANDOVER_MINUTES,
     load_routes,
     road_travel_minutes,
-    routes_path,
     write_routes,
 )
 

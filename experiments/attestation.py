@@ -178,14 +178,14 @@ def main(n_seeds: int = 6) -> int:
     fps = [r.attestation.measure_false_positive_rate(r.ledger, 0.0)
            for r, _ in cal]
     fp = st.fmean(fps)
-    print(f"  At deterrence 1.0 every signed attestation is TRUE by construction,")
+    print("  At deterrence 1.0 every signed attestation is TRUE by construction,")
     print(f"  so every referral is a false positive. Measured rate: {fp:.2%}")
     print(f"  (window {AUDIT_REFERRAL_WINDOW_MINUTES:.0f} min; a hospital full at T")
-    print(f"  that admits at T+3 after a discharge has not lied.)")
-    print(f"\n  Referrals therefore hand a regulator a specific signed claim to")
-    print(f"  check against records it may already inspect. They never overrule")
-    print(f"  anyone, which is why the live mechanism keeps zero false accusations")
-    print(f"  in every row of the sweep above.")
+    print("  that admits at T+3 after a discharge has not lied.)")
+    print("\n  Referrals therefore hand a regulator a specific signed claim to")
+    print("  check against records it may already inspect. They never overrule")
+    print("  anyone, which is why the live mechanism keeps zero false accusations")
+    print("  in every row of the sweep above.")
     out["referral_false_positive_rate"] = fp
 
     RESULTS.mkdir(exist_ok=True)

@@ -2,18 +2,10 @@
 
     python experiments/build_provenance.py
 
-This document is *generated*, never hand-written, and that is the point.
-
-The previous version of this project claimed in its README to be "checked
-against 3,186 real hospitals" while every hospital in every experiment was
-synthesised from three hand-written templates. The claim and the code had
-drifted apart, and a reviewer found the gap before the authors did.
-
-A generated provenance document cannot drift. Every row below is read out of
-the module that actually builds the network, or out of the vendored data file
-that actually feeds it. If someone adds an assumed parameter and does not
-declare it, it does not silently vanish from the paper -- it shows up here as
-undeclared, and `test_provenance.py` fails.
+This document is *generated*, never hand-written, so it cannot drift from the
+code. Every row is read out of the module that builds the network, or out of
+the vendored data file that feeds it. An assumed parameter that is not
+declared shows up as undeclared, and `tests/test_real_network.py` fails.
 """
 
 from __future__ import annotations
@@ -26,17 +18,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from mahros.calibration.facilities import (  # noqa: E402
-    METROS,
     SUSPECTED_AGGREGATES,
     load_vendor,
 )
-from mahros.core.types import ResourceType  # noqa: E402
 from mahros.sim.real_network import (  # noqa: E402
     PROVENANCE,
     build_real_network,
     provenance_table,
 )
-from mahros.sim.scenario import REAL_SCENARIOS, SCENARIOS  # noqa: E402
+from mahros.sim.scenario import REAL_SCENARIOS  # noqa: E402
 
 OUT = ROOT / "docs" / "DATA_PROVENANCE.md"
 

@@ -60,10 +60,6 @@ class ReportedAssessment:
     misreported: bool = False
     fabricated_reason: str = ""
 
-    @property
-    def is_honest(self) -> bool:
-        return not self.misreported
-
 
 class BiddingPolicy:
     """Base policy: decides what a hospital reports, and whether it can defend it."""

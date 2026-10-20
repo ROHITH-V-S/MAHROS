@@ -23,7 +23,6 @@ import sys
 import time
 from pathlib import Path
 
-from mahros.hospital.behaviours import StrategicPolicy
 from mahros.negotiation.cnp import CNPConfig
 from mahros.sim import metrics as M
 from mahros.sim.runner import RunConfig, SimulationRunner

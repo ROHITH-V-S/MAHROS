@@ -25,8 +25,6 @@ sys.path.insert(0, str(ROOT))
 from mahros.calibration.facilities import (  # noqa: E402
     METROS,
     load_vendor,
-    num,
-    vendor_path,
     write_vendor,
 )
 

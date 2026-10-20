@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from mahros.core.types import ResourceType, Specialty
+from mahros.core.types import ResourceType
 from mahros.server.live import LiveNetwork
 
 

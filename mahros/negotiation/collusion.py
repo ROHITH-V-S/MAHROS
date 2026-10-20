@@ -140,37 +140,6 @@ class Cartel:
 # The defence
 # --------------------------------------------------------------------------- #
 
-@dataclass
-class CoRefusalAlarm:
-    """A pair of hospitals refusing together more than chance explains.
-
-    **Not a finding of collusion.** Hospitals in one metro serve one population
-    and fill up together; the pattern has an innocent explanation and usually
-    has it. The alarm names a pair worth looking at, carries the measured
-    false-alarm rate, and never affects a live decision.
-    """
-
-    pair: tuple[str, str]
-    joint_refusals: int
-    opportunities: int
-    observed_rate: float
-    expected_rate: float
-    lift: float
-    false_alarm_rate: float = 0.0
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "pair": list(self.pair),
-            "joint_refusals": self.joint_refusals,
-            "opportunities": self.opportunities,
-            "observed_rate": round(self.observed_rate, 4),
-            "expected_rate": round(self.expected_rate, 4),
-            "lift": round(self.lift, 3),
-            "false_alarm_rate": round(self.false_alarm_rate, 4),
-            "status": "advisory -- NOT a finding of collusion",
-        }
-
-
 class CoRefusalDetector:
     """Tracks refusal dependence between hospitals, across requests.
 
@@ -294,34 +263,6 @@ class CoRefusalDetector:
         if baseline <= 0:
             return float("nan")
         return conditional / baseline
-
-    def alarms(self, threshold: float,
-               false_alarm_rate: float = 0.0) -> list[CoRefusalAlarm]:
-        """Ordered pairs whose follow-on dependence exceeds `threshold`.
-
-        `threshold` is not a natural constant. It is calibrated against an
-        all-honest network under the same scenario, where every alarm is a false
-        alarm by construction -- see `experiments/collusion.py`.
-        """
-        out: list[CoRefusalAlarm] = []
-        for key, opportunities in self._follow_opportunities.items():
-            if opportunities < self.min_opportunities:
-                continue
-            a, b = key
-            value = self.follow_on_lift(a, b)
-            if math.isnan(value) or value < threshold:
-                continue
-            out.append(CoRefusalAlarm(
-                pair=key,
-                joint_refusals=self._follow_refusals.get(key, 0),
-                opportunities=opportunities,
-                observed_rate=self._follow_refusals.get(key, 0) / opportunities,
-                expected_rate=self.refusal_rate(b),
-                lift=value,
-                false_alarm_rate=false_alarm_rate,
-            ))
-        out.sort(key=lambda x: -x.lift)
-        return out
 
     def max_lift(self) -> float:
         """Highest follow-on dependence over all scored ordered pairs."""

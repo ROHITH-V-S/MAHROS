@@ -123,15 +123,15 @@ def signature_microbenchmark(n: int = 20000) -> dict:
     print(f"\n  signature backend       : {signer_backend()}")
     print(f"  co-sign one attestation : {sign_us:8.1f} us")
     print(f"  verify one attestation  : {verify_us:8.1f} us")
-    print(f"  -> verification is local and offline: no authority round trip,")
-    print(f"     which is what keeps it inside the clinical window.")
+    print("  -> verification is local and offline: no authority round trip,")
+    print("     which is what keeps it inside the clinical window.")
     return {"backend": signer_backend(), "sign_us": sign_us,
             "verify_us": verify_us, "n": n}
 
 
 def main(scenario: str = "houston_surge", days: float = 4) -> int:
     seeds = [42, 143, 244]
-    print(f"\nDECISION LATENCY -- one transfer request, end to end")
+    print("\nDECISION LATENCY -- one transfer request, end to end")
     print(f"scenario={scenario}  27 real hospitals  {len(seeds)} seeds  "
           f"{days:.0f}-day horizon")
     print(f"budget: p99 < {BUDGET_MS:.0f} ms\n")
@@ -165,10 +165,10 @@ def main(scenario: str = "houston_surge", days: float = 4) -> int:
           f"({BUDGET_MS / worst:.0f}x inside the {BUDGET_MS:.0f} ms budget)")
     # (No hard-coded phone-tree comparison here: the coordinator minutes it
     # spends are measured by run_all.py and quoted from results in RESULTS.md.)
-    print(f"\n  Caveat, stated rather than buried: single process, in memory, no")
-    print(f"  network, no TLS, no persistence. A deployment adds a round trip per")
-    print(f"  hospital and a durable ledger write. This shows the protocol is not")
-    print(f"  the bottleneck; it does not show a deployment would be.")
+    print("\n  Caveat, stated rather than buried: single process, in memory, no")
+    print("  network, no TLS, no persistence. A deployment adds a round trip per")
+    print("  hospital and a durable ledger write. This shows the protocol is not")
+    print("  the bottleneck; it does not show a deployment would be.")
 
     RESULTS.mkdir(exist_ok=True)
     path = RESULTS / "realtime.json"

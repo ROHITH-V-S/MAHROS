@@ -1,7 +1,7 @@
 """Start a real network at the occupancy its hospitals reported, not empty.
 
-Every run used to begin with every bed empty, which flatters early transfers
-(the README listed it as a known limitation). A warm start fills each bed pool
+Starting with every bed empty would flatter early transfers. A warm start
+fills each bed pool
 to what the hospital reported to HHS in the scenario's week, and gives each of
 those patients a realistic *remaining* stay.
 

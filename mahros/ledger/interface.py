@@ -23,7 +23,7 @@ import hashlib
 import json
 import bisect
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.types import Agreement
@@ -96,9 +96,6 @@ class LedgerBackend(abc.ABC):
 
     @abc.abstractmethod
     def verify(self) -> dict[str, Any]: ...
-
-    @abc.abstractmethod
-    def export(self, path: str) -> None: ...
 
     @abc.abstractmethod
     def stats(self) -> dict[str, Any]: ...
@@ -295,10 +292,6 @@ class HashChainLedger(LedgerBackend):
             "errors": errors,
         }
 
-    def contains(self, agreement: Agreement) -> bool:
-        target = sha256_hex(agreement.canonical())
-        return any(e["terms_hash"] == target for b in self.chain for e in b.entries)
-
     # -- history: the evidence base for challenging a refusal -------------- #
     def history(self) -> list[dict[str, Any]]:
         """Every recorded agreement, sealed or still pending, oldest first.
@@ -352,12 +345,6 @@ class HashChainLedger(LedgerBackend):
         return [e for e in rows[lo:hi]
                 if resource is None or e.get("resource") == resource]
 
-    # -- io ---------------------------------------------------------------- #
-    def export(self, path: str) -> None:
-        self.flush()
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump([asdict(b) for b in self.chain], fh, indent=2)
-
     def stats(self) -> dict[str, Any]:
         self.flush()
         lat = self._latencies
@@ -381,9 +368,6 @@ class NullLedger(LedgerBackend):
     def verify(self) -> dict[str, Any]:
         return {"valid": False, "blocks": 0, "records": 0,
                 "errors": ["no audit trail kept"]}
-
-    def export(self, path: str) -> None:
-        pass
 
     def stats(self) -> dict[str, Any]:
         return {"backend": self.name, "records": 0}

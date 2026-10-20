@@ -4,8 +4,11 @@
 --
 -- Three kinds of table, and the rules differ on purpose:
 --   1. REAL reference data (HHS reports, CMS capability, OSRM roads). Locked:
---      a trigger refuses every change, even from a superuser in pgAdmin,
---      unless the data loader has switched `mahros.loading_reference` on.
+--      the app role has no write grant, and a trigger refuses ordinary
+--      changes, including from the owner in pgAdmin. The data loader bypasses
+--      it with `mahros.loading_reference`; an owner can do the same or disable
+--      the trigger, so the lock prevents accidents and the audit chain
+--      detects deliberate changes.
 --   2. LIVE state (occupancy, hospital behaviour). The only things a person may
 --      edit, and only through narrow column grants. Every change is audited.
 --   3. RECORDS of what happened (transfers, agent decisions, ledger, audit).

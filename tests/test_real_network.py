@@ -11,12 +11,10 @@ assumed, so a parameter cannot be quietly introduced and then described as
 from __future__ import annotations
 
 import copy
-import math
 
 import pytest
 
 from mahros.calibration.facilities import (
-    METROS,
     SUSPECTED_AGGREGATES,
     haversine_km,
     load_vendor,

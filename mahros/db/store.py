@@ -110,23 +110,7 @@ class Store:
             finally:
                 self._conn = None
 
-    def ping(self) -> bool:
-        try:
-            with self.tx() as cur:
-                cur.execute("SELECT 1")
-            return True
-        except Exception:
-            return False
-
     # -- events ------------------------------------------------------------ #
-    def event(self, event_type: str, details: dict | None = None,
-              level: str = "info", source: str = "app") -> None:
-        with self.tx() as cur:
-            cur.execute(
-                "INSERT INTO system_events (level, source, event_type, details) "
-                "VALUES (%s, %s, %s, %s)",
-                (level, source, event_type, Jsonb(details or {})))
-
     def audit_action(self, actor: str, action: str, details: dict) -> int:
         """Record a user action that is not itself a row change (a toggle)."""
         with self.tx(actor) as cur:

@@ -50,12 +50,10 @@ that had to be established separately rather than assumed:
 * Only **capacity** claims are spot-checked. A capability refusal ("we don't
   offer that resource") is already checkable against the public directory, and
   is settled before a hospital's bidding policy runs, so it leaves no statement
-  to certify. An earlier version demanded signatures for those too, and honest
-  hospitals were struck out for being unable to produce one -- 1,427 such cases
-  in a single run, and a handful of them became real false accusations.
+  to certify. Demanding signatures for those would strike out honest hospitals
+  for being unable to produce one: false accusations.
 
-That second point was found by a test failing, not by inspection, and the
-false-accusation count is now measured and printed rather than asserted in
+The false-accusation count is measured and printed rather than asserted in
 prose.
 """
 
@@ -144,8 +142,8 @@ def main(n_seeds: int = 6) -> int:
     six = out["attack"]["6"]["success_rate"]
     print(f"\n  A cartel of 6 of 27 hospitals costs the network "
           f"{(base - six) * 100:.1f} points of transfer success,")
-    print(f"  and the challenge mechanism overrules almost none of it. For")
-    print(f"  comparison, the SAME number of uncoordinated liars is caught.")
+    print("  and the challenge mechanism overrules almost none of it. For")
+    print("  comparison, the SAME number of uncoordinated liars is caught.")
 
     # -- 2. why detection fails -------------------------------------------- #
     print(f"\n{'-' * 78}")
@@ -206,9 +204,7 @@ def main(n_seeds: int = 6) -> int:
     print("       truthful bid is still a refusal, so nobody is made to take a")
     print("       patient they cannot take.")
 
-    # Measured, not asserted. An earlier version of this script claimed zero
-    # here in prose while the table above it printed 0.3 and 0.5 -- the exact
-    # habit this project exists to correct.
+    # Measured, not asserted.
     worst = max(
         row[arm]["false_accusations"]
         for row in out["defence"].values() for arm in ("honest", "colluding"))

@@ -49,8 +49,10 @@ pgAdmin → `hhs_weekly_reports` → right-click → *View/Edit Data → First 1
 Then try to change one value in that grid and save. **The database refuses**:
 *"holds real public data ... and is locked"*.
 
-> "Nobody, not even the database owner, can edit the real data. Only the
-> loader that imports it can."
+> "The app cannot write to the real data at all, and the database refuses
+> ordinary edits even from the owner. Someone with full control of a database
+> can always switch a lock off; that is why every change also goes on a
+> hash-chained audit log."
 
 ### 2. Ask every hospital at once (1.5 min)
 

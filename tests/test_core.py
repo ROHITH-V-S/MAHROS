@@ -15,7 +15,6 @@ from mahros.core.types import (
     Agreement,
     Patient,
     ResourceType,
-    Specialty,
     TransferRequest,
 )
 from mahros.fairness.metrics import FairnessLedger, gini, jain_index

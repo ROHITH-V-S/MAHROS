@@ -17,11 +17,9 @@ import time
 from pathlib import Path
 
 from mahros.core.types import Acuity, RequestStatus
-from mahros.eval import holm_adjust, paired_t, tost_equivalence
-from mahros.ledger.interface import HashChainLedger
 from mahros.sim import metrics as M
 from mahros.sim.runner import RunConfig, SimulationRunner
-from mahros.sim.scenario import SCENARIOS, build_network, travel_time_matrix
+from mahros.sim.scenario import SCENARIOS, travel_time_matrix
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
@@ -38,9 +36,7 @@ SCENARIO_ORDER = ["houston_calm", "houston_baseline", "houston_typical",
 SYNTHETIC_SCENARIO_ORDER = ["baseline", "surge", "scarcity", "surge_scarcity"]
 
 #: The scenario the ablations, the per-hospital detail and the dashboard demos
-#: are drawn from. Kept as a named constant because it was previously hardcoded
-#: to the synthetic network in six places, which quietly meant the headline
-#: ablation table described a different network from the headline sweep.
+#: are drawn from: one constant, so they all describe the same network.
 PRIMARY_SCENARIO = "houston_surge"
 #: Largest difference in transfer success rate we are willing to call "the
 #: same". Declared before looking at any result. Two percentage points is below

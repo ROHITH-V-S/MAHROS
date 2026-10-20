@@ -1,27 +1,22 @@
 # MAHROS
 
-**Multi-Agent Hospital Resource Optimization System.** When an admitted patient
-deteriorates and needs care their hospital cannot give right now (an ICU bed,
-a cath lab, a neurosurgeon), MAHROS finds a receiving hospital: every capable
-hospital in reach is asked at once, each answers for itself, and a refusal
-can be **checked** against public records and the hospital's own past
-commitments, without anyone revealing a bed count.
+**Multi-Agent Hospital Resource Optimization System.**
 
-> **Scope.** Escalation transfers of admitted patients between hospitals.
-> Not ambulance routing, not emergency-department triage. Around 1.5 million
-> US admissions a year end in an interhospital transfer.
+When an admitted patient gets worse and needs care their hospital cannot give
+right now (an ICU bed, a cath lab, a neurosurgeon), MAHROS finds a receiving
+hospital. It asks every capable hospital nearby at once, each hospital's agent
+answers for itself, and a refusal ("we're full") can be **checked**, without
+any hospital revealing its bed count.
 
-New here? Read **[docs/PANEL_GUIDE.md](docs/PANEL_GUIDE.md)** (plain English,
-the likely questions, the answers) and **[docs/DEMO.md](docs/DEMO.md)** (the
-10-minute demo).
+> **Scope:** transfers of patients already admitted. Not ambulance routing, not
+> emergency-department triage.
 
 ---
 
-## Setup
+## Run it
 
-**You need:** [Git](https://git-scm.com/downloads) and
-[Docker Desktop](https://www.docker.com/products/docker-desktop/) (start it
-and wait until it says it is running).
+You need [Docker Desktop](https://www.docker.com/products/docker-desktop/),
+running.
 
 ```bash
 git clone https://github.com/ROHITH-V-S/MAHROS.git
@@ -29,233 +24,116 @@ cd MAHROS
 docker compose up -d --build
 ```
 
-The first build takes a few minutes. Then open:
-
-| Address | What |
+| Open | What |
 |---|---|
-| http://localhost:8090 | MAHROS (tabs: **Live negotiation**, **Hospital data**, **Results**) |
-| http://localhost:5051 | pgAdmin, to look inside the database. Open *Servers → MAHROS database*; password if asked: `mahros-admin-local` |
+| http://localhost:8090 | MAHROS: **Live negotiation**, **Hospital data**, **Results** |
+| http://localhost:5051 | pgAdmin, to look inside PostgreSQL (password if asked: `mahros-admin-local`) |
 
-Stop it with `docker compose down`. Start it again with `docker compose up -d`
-(your data is kept). `docker compose down -v` also wipes the database.
+- Stop: `docker compose down` (data is kept). Start again: `docker compose up -d`.
+- Wipe the database and reload the real data: `docker compose down -v`.
+- Port in use? Copy `.env.example` to `.env` and change the ports.
+- Top bar says "not saving"? Run `docker compose logs app`.
 
-**If something goes wrong**
+---
 
-- *Port already in use:* copy `.env.example` to `.env` and change
-  `MAHROS_APP_PORT` / `MAHROS_PGADMIN_PORT` / `MAHROS_DB_PORT`.
-- *The top bar says "not saving: no database":* run `docker compose logs app`.
-- *No Docker:* `pip install -e ".[demo,db]"` then `python -m mahros.server`
-  and open http://127.0.0.1:8000. It works, but nothing is saved and the
-  Hospital data tab is empty.
+## How a transfer works
+
+1. **Ask everyone at once.** The hospital with the patient sends the request
+   to the 8 nearest hospitals that list the needed specialty (Contract Net).
+2. **Each hospital answers for itself** from its own, private bed state: yes
+   (with how soon) or no (with a reason).
+3. **Check the refusals.** "We don't treat that" is checked against the public
+   CMS register. "We're full" is checked against what the same hospital
+   agreed to take in the last hour, on a ledger it cannot edit.
+4. **Settle disputes.** A contradicted refusal is challenged; the hospital
+   defends or signs it, or it is struck out (Dung's grounded semantics).
+5. **Award** to the best bid: time to care first, then specialty fit, strain,
+   and fairness.
+6. **Record everything** in PostgreSQL in one transaction, with a
+   hash-chained audit log.
+
+| Agent | Decides |
+|---|---|
+| **Hospital agent** (one per hospital, with a resource agent per bed pool) | whether it can take the patient, what it *says*, and how it defends a refusal |
+| **Transfer manager** (one per request) | who to ask, how to score the bids, who wins |
+| **Verifier** | which refusals are contradicted by the record; runs random spot checks against collusion |
+| **Data Integrity Agent** | flags impossible or copied weekly reports in the real HHS data |
+| **Regional Monitor** | which needs go unmet and which bed pools are fullest |
+
+**The optimisation problem.** Assign each transfer request $q$ a receiving
+hospital $h_q$ to (1) maximise patients who reach care inside their clinical
+window, $\sum_q \mathbf{1}[\Delta_q + \tau_{o_q,h_q} + p_{h_q} \le W(a_q)]$,
+then (2) minimise time to care, then (3) balance the burden across hospitals,
+subject to capacity, capability, **privacy** (no hospital's occupancy is ever
+sent) and **self-interest** (a hospital may say something other than the
+truth). MAHROS is compared with a phone tree (today's practice), a shared bed
+registry, and two optimisers that see every hospital's true occupancy
+(central greedy and batched Hungarian assignment).
 
 ---
 
 ## What is real, and what is simulated
 
-| | Source | Status |
+| | Source | |
 |---|---|---|
-| 27 Houston hospitals, 30 Phoenix hospitals: identity, location, beds, staffed ICU beds, weekly occupancy 2020–2024 | US HHS / CDC NHSN facility reports | **Real** |
-| Who can treat what (cardiac, neuro, trauma, obstetric, burns, paediatric), cath-lab rooms | CMS Provider of Services | **Real** |
-| Road travel times between every pair | OSRM over OpenStreetMap | **Real** (free-flow) |
-| Which patients need transfer, and for what (the case-mix) | 37,439 interhospital transfers, California 2021 (HCAI) | **Real**, with a declared mapping |
-| Occupancy each run starts from | the hospitals' reported week | **Real** |
-| Step-down beds, OR slots, ventilators per hospital | declared ratios | Assumed (no dataset reports them) |
-| Patient arrivals, deterioration, length of stay | fitted to the real occupancy | Simulated, validated |
-| **How hospitals answer a transfer request, and whether honestly** | none exists publicly | **Simulated**: the thing under study |
+| 27 Houston and 30 Phoenix hospitals: beds, staffed ICU beds, weekly occupancy 2020–2024 | US HHS / CDC NHSN | **Real** |
+| What each hospital can treat; cath-lab rooms | CMS Provider of Services | **Real** |
+| Road travel times | OSRM / OpenStreetMap | **Real** |
+| Which patients need transfer, and for what | 37,439 California transfers, 2021 (HCAI) | **Real** |
+| Step-down beds, OR slots, ventilators | declared ratios | Assumed |
+| Arrivals, deterioration, length of stay | fitted to the real occupancy | Simulated |
+| **How hospitals answer, and whether honestly** | no public data exists | **Simulated** (the thing under study) |
 
-Every field is labelled observed / derived / assumed in
-[docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md) (generated from the code),
-and every modelling choice is in [docs/MODEL_ASSUMPTIONS.md](docs/MODEL_ASSUMPTIONS.md).
-
----
-
-## The Hospital data tab
-
-All 27 real hospitals, as the live system sees them.
-
-- **Real data is locked.** Bed capacity and specialties show a lock. The
-  database refuses changes to them, even from the database owner in pgAdmin;
-  only the data loader can rewrite them.
-- **Editable:** occupancy per pool, and each hospital's behaviour (honest,
-  protective, cautious). **Save** writes to PostgreSQL; the next transfer
-  uses it. Edited values get a yellow **edited** badge next to the real value.
-- **Restore** one hospital, or **Restore all to real data** (two clicks).
-  Occupancy returns to what each hospital reported; behaviour back to honest;
-  patients moved in this session are discharged. Nothing is deleted: a new
-  session starts and the history stays.
-- **History** per hospital: every change from the audit log (before → after,
-  who, when), and the hospital's own flagged HHS reports.
-- Also on the tab: transfers saved in the database with a full **trace**,
-  **where the network is running out** (Regional Monitor), the **Data
-  Integrity Agent**'s findings, the **audit log**, and **Verify now**.
-
-Every transfer run in the console is written to the database in one
-transaction: the patient (pseudonymised), the request, every agent's decision,
-any challenge, the allocation, the admission, the bed taken, and the ledger
-block. If that write fails, the engine reloads from the database, so the
-screen never shows a transfer the database does not have.
-
----
-
-## The optimisation problem
-
-**Given** hospitals $H$ with resource pools $r$ of capacity $c_{h,r}$ (public,
-real) and occupancy $x_{h,r}(t)$ (**private**), public capabilities $S_h$, road
-times $\tau_{o,h}$, and transfer requests $q$ (origin, resource, specialty,
-acuity $a_q$, clinical window $W(a_q)$).
-
-**Decide** a receiving hospital $h_q$ for each request, after negotiation
-delay $\Delta_q$.
-
-**Objective**, in order: (1) maximise patients who reach care inside their
-window, $\sum_q \mathbf{1}[\Delta_q + \tau_{o_q,h_q} + p_{h_q} \le W(a_q)]$;
-(2) minimise time to care; (3) balance the burden across hospitals.
-
-**Subject to** capacity ($x_{h,r}+1 \le c_{h,r}$), capability ($s_q \in S_h$),
-**privacy** (no $x_{h,r}$ is ever sent), and **self-interest** (each hospital
-*reports* an answer that may differ from the truth).
-
-| Method | Information it uses | Decision rule |
-|---|---|---|
-| Phone tree (today) | one hospital at a time | first "yes", nearest first |
-| Shared registry | everyone's declared availability, believed | nearest hospital that says it has room |
-| Central greedy | everyone's **true** occupancy | best score, one request at a time |
-| Batched optimal | everyone's **true** occupancy | minimum-cost assignment of a batch (Hungarian): the efficiency ceiling |
-| **MAHROS** | only what hospitals say, plus a record they cannot edit | ask the 8 nearest capable hospitals at once, verify refusals, award by score |
-
-The two omniscient methods break the privacy constraint; they are upper
-bounds. The evaluation asks how close MAHROS gets **without** pooling private
-occupancy, and what happens when hospitals do not tell the truth.
-
----
-
-## The agents
-
-| Agent | One per | Decides |
-|---|---|---|
-| **Hospital agent** (with resource agents per pool) | hospital | whether it can take a patient, what that costs it, and what to *say*; defends or signs its refusals |
-| **Transfer manager** | request | asks the nearest capable hospitals at once (Contract Net), scores the bids, awards |
-| **Verifier** | network | turns refusals into checkable claims: capability against the CMS register, capacity against the hospital's own recent acceptances on the ledger; settles disputes with Dung's grounded semantics; runs spot checks |
-| **Data Integrity Agent** | network | checks every real weekly HHS report with plain rules (impossible, frozen, collapsed) |
-| **Regional Monitor** | network | reports which needs go unmet and which pools are fullest |
-
-Each hospital agent holds private state nobody else reads, decides
-independently, and talks only through FIPA-style messages (call for
-proposals, propose, refuse, accept). A test asserts that no node ever
-received every hospital's private state. Every agent decision is a row in
-`agent_decisions` with the agent that made it.
-
----
-
-## Capacity-claim verification (what used to be called the lie detector)
-
-Accepting a transfer costs a hospital a scarce bed. The cheapest way out is
-to say "we're full". A plain auction cannot check that. MAHROS turns each
-refusal into a claim that can be tested:
-
-- **"We don't treat that"** is checked against the public CMS register.
-- **"We're full"** is checked against what the same hospital agreed to take in
-  the last hour, on a ledger it cannot edit. Nobody reveals a bed count.
-- A contradicted refusal is challenged. In the **signed** version the hospital
-  must sign its claim with a key it does not solely control; whether a liar
-  will sign is a swept parameter, not an assumption.
-- **Spot checks** ask a sample of refusals to certify themselves with no
-  evidence against them, because a coordinated cartel never triggers a
-  reactive check. We also tested checking hospitals already caught more
-  often: at the same checking effort it was no better (see Results).
-
-**Grounding.** No public dataset records transfer refusals, so the behaviour is
-simulated. Two things are real: hospitals' own capacity reports are often
-unreliable (the Data Integrity Agent flags real HHS reports as impossible or
-copied, at very different rates in the two cities), and US law already
-treats "refusing despite capacity" as unacceptable for emergency patients
-(EMTALA, 42 CFR 489.24(f)). EMTALA does not cover patients already admitted
-(489.24(f)(2)), which is MAHROS's scope: it is precedent, not applicable law.
-
-**"Zero false accusations"** is a tested safety property, not a lucky
-measurement: an honest refusal is backed by the hospital's real state, so it
-can always be defended or signed. It has failed once (spot checks on
-capability refusals struck out honest hospitals) and was fixed; tests guard it.
+For the Houston network the simulator's inputs are 8 observed, 4 derived,
+6 assumed. Every one is listed in [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md),
+which is generated from the code.
 
 ---
 
 ## Results
 
-Every number below is generated from `results/*.json` by
-`python experiments/build_results.py`, which rewrites this block and
-[docs/RESULTS.md](docs/RESULTS.md). Do not edit it by hand.
-
 <!-- results:start -->
 - MAHROS places 13.0 percentage points more patients in time than a phone tree given perfect information (p < 0.0001).
 - Against optimisers that see every hospital's true occupancy: -0.3 pts vs central greedy, +0.4 pts vs batched optimal; equivalent within ±2 points: yes / yes.
 - On an honest network a shared registry ties MAHROS (-0.0 pts, Holm p = 0.8980).
+- With half the hospitals refusing falsely, a shared registry places 68.6% and MAHROS 86.5% (+17.9 pts).
 - With half the hospitals refusing falsely, success falls to 63.7% without checking and holds at 86.5% with it.
+- With half the hospitals protective, checking refusals keeps success at 86.2%; without checking it falls to 64.5%, and without the ledger to 62.4%.
 - Requiring hospitals to sign their refusals gives 62.3% to 86.5% success depending on how often a liar refuses to sign (no checking: 63.7%).
 - A cartel of 6 cuts success to 79.2%; 15% random spot checks bring it back to 90.8%.
 - Checking hospitals already caught more often is no better than uniform 15% spot checks at similar effort (+0.5 pts, p = 0.6581, 111% of the checks).
+- Phoenix (30 hospitals, not re-tuned): MAHROS beats the phone tree by +9.9 to +14.3 points across four real weeks.
 - Simulated occupancy is within 3.8 points of what Houston's hospitals reported (R² 0.95), and 3.0 points for Phoenix (R² 0.97), which was not tuned.
 - 5.4% of Houston's weekly capacity reports and 0.2% of Phoenix's are impossible or look copied (20 of 27 and 3 of 30 hospitals have at least one report that cannot be right).
+- Coordinator time per transfer: 1.1 min with MAHROS, 50.3 min by phone.
+- MAHROS beat the phone tree under every value of every unsourced parameter. Checking refusals adds 21.8 points when protective hospitals lie consistently; when they lie only half the time a second round of asking already recovers almost everything, and checking costs up to 0.4 points.
 
 Full tables, and every caveat: [docs/RESULTS.md](docs/RESULTS.md).
 <!-- results:end -->
 
-### Say these before a reviewer does
+### Limits we state first
 
-- **Behaviour is simulated.** The network is real; how hospitals answer is
-  modelled, with every behavioural parameter swept.
-- **A shared registry matches MAHROS when everyone is honest.** MAHROS's case
-  is what happens when they are not.
-- **The omniscient optimiser is slightly better.** Decentralisation has a
-  measurable cost; RESULTS.md gives its size.
-- **Collusion defeats reactive checking.** Only proactive spot checks recover
-  it, and they cost checking effort.
-- **Report reliability varies by region.** Houston's reports are flagged far
-  more often than Phoenix's; neither is a national estimate.
-- **Validation is of occupancy, not of behaviour.** The model reproduces the
-  occupancy hospitals reported, from a cold start. Nothing validates how they
-  negotiate.
+- **Behaviour is simulated.** No public data records transfer refusals; every
+  behavioural setting is swept.
+- **When every hospital is honest, a shared registry does as well.** MAHROS
+  matters when they are not.
+- **An optimiser that sees every hospital's true occupancy is slightly
+  better.** That is the measured cost of keeping occupancy private.
+- **Collusion defeats reactive checks.** Only random spot checks recover it.
+- **The database owner can always bypass a trigger.** The locks stop ordinary
+  edits; the audit chain and its checkpoints are what *detect* tampering.
+- **Validation is of occupancy, not behaviour.** Missing the clinical window
+  is a proxy for harm, not a mortality model.
 
----
-
-## The audit, and how to check it from the backend
-
-Two layers, both in PostgreSQL:
-
-1. **The transfer ledger**: a Merkle-linked hash chain of every agreement and
-   every capacity refusal. It is the evidence the Verifier reasons over, so
-   removing it removes the defence (see the ablation in RESULTS.md).
-2. **The audit log**: database triggers record every insert, update and delete
-   on the live tables (before, after, who, when) in a SHA-256 hash chain. The
-   application cannot write it directly and cannot edit or delete any record;
-   it can only add rows. User actions that are not row changes (toggles,
-   restores) are recorded too.
-
-`audit_verify()` (also **Verify now** and `GET /api/audit/verify`) recomputes
-the chain and names the first broken row. **Checkpoints** write down the
-chain head, so even a database superuser who rewrote the whole chain
-consistently would no longer match a checkpoint taken before. That is the
-honest limit: without an external copy of the checkpoints, a superuser could
-rewrite everything after the last one.
-
-Try it: in pgAdmin, change any value in `audit_log`, then press **Verify now**.
-
-| API | |
-|---|---|
-| `GET /api/hospitals`, `PATCH /api/hospitals/{id}` | the tab's data; edit occupancy or behaviour |
-| `POST /api/hospitals/{id}/restore`, `POST /api/restore` | back to real data |
-| `GET /api/hospitals/{id}/history` | one hospital's changes |
-| `GET /api/transfers`, `GET /api/transfers/{id}` | saved transfers; full trace |
-| `GET /api/audit`, `GET /api/audit/verify`, `POST /api/audit/checkpoint` | audit log |
-| `GET /api/ledger/verify` | recompute the ledger from the stored rows |
-| `GET /api/data-integrity`, `GET /api/bottlenecks` | the two monitoring agents |
-| `/api/docs` | everything, interactive |
+More in [docs/MODEL_ASSUMPTIONS.md](docs/MODEL_ASSUMPTIONS.md).
 
 ---
 
-## Reproduce every number
+## Reproduce and test
 
 ```bash
-pip install -e ".[demo,db,analysis,attest]"
+pip install -e ".[demo,db,analysis,attest,dev]"
+
 python experiments/validate_occupancy.py houston_baseline 5
 python experiments/validate_occupancy.py houston_surge 5
 python experiments/validate_occupancy.py phoenix_baseline 5
@@ -272,23 +150,16 @@ python experiments/sensitivity.py 5
 python experiments/realtime.py
 python experiments/build_provenance.py
 python experiments/build_dashboard.py
-python experiments/build_results.py          # -> docs/RESULTS.md and the README block
+python experiments/build_results.py   # writes docs/RESULTS.md and the block above
 ```
 
-Every run is fixed by `(scenario, seed)` and gives the same result in any
-process (`tests/test_core.py::test_same_seed_same_result_in_a_fresh_process`).
-The real data is vendored, so no network access is needed except to re-fetch
-it (`experiments/fetch_network.py`, `fetch_capability.py`, `fetch_routes.py`,
-`fetch_transfer_mix.py`).
-
-Tests:
+Every run is fixed by `(scenario, seed)`. The real data is vendored, so no
+network access is needed (the `fetch_*.py` scripts re-download it).
 
 ```bash
-python -m pytest                                           # database tests skip without a database
-MAHROS_TEST_ADMIN_URL=postgresql://mahros_admin:mahros-admin-local@localhost:5440/mahros python -m pytest
-python tests/api_db_smoke.py                               # every database API of a running app
-node tests/ui_hospital_tab.js                              # the Hospital data tab, headless (needs jsdom)
-node dashboard/check_console.js                            # console structure (needs jsdom)
+python -m pytest     # database tests run when MAHROS_TEST_ADMIN_URL is set:
+# MAHROS_TEST_ADMIN_URL=postgresql://mahros_admin:mahros-admin-local@localhost:5440/mahros
+python tests/api_db_smoke.py          # every database API of a running app
 ```
 
 ---
@@ -297,37 +168,22 @@ node dashboard/check_console.js                            # console structure (
 
 ```
 mahros/
-  hospital/      hospital agents, resource agents, behaviour policies
-  negotiation/   Contract Net, verification (challenge engine, argumentation,
-                 attestation, collusion), scoring, message bus
-  integrity/     Data Integrity Agent rules
-  ledger/        hash-chain ledger
-  db/            PostgreSQL: schema (locks, audit triggers), store, loader,
-                 live sync, defaults
-  sim/           real network builder, warm start, scenarios, strategies, runner
-  calibration/   vendored real data: HHS, CMS POS, OSRM, California transfers
-  fairness/ privacy/ eval/ llm/   burden balance, pseudonymisation, statistics,
-                                  optional explanation-only LLM
-  server/        FastAPI app and the console
-experiments/     every result (see above)
-tests/           pytest suite, API smoke test, UI check
-docs/            PANEL_GUIDE, DEMO, RESULTS (generated), DATA_PROVENANCE
-                 (generated), MODEL_ASSUMPTIONS
-docker-compose.yml, Dockerfile, docker/pgadmin/
+  hospital/      hospital and resource agents, behaviour policies
+  negotiation/   Contract Net, refusal checks, argumentation, signed refusals,
+                 collusion, scoring, message bus
+  db/            PostgreSQL schema (locks, audit triggers), store, loader
+  server/        FastAPI app and the browser console
+  sim/           real network builder, scenarios, baselines, runner
+  calibration/   vendored real data (HHS, CMS, OSRM, California transfers)
+  integrity/  ledger/  fairness/  privacy/  eval/  llm/
+experiments/     one script per result
+tests/           pytest suite and smoke tests
+docs/            DEMO, PANEL_GUIDE, MODEL_ASSUMPTIONS, RESULTS*, DATA_PROVENANCE*
+                 (* generated)
 ```
 
-## Known limitations
-
-- Negotiation behaviour is simulated; no public transfer-request logs exist.
-- Facility reports are self-reported and COVID-era (collection ended
-  2024-05-03); VA, IHS and DoD hospitals are excluded by the dataset.
-- The case-mix is Californian (no Texas source); the transfer rate the model
-  produces (4.5% of admissions) is above California's 1.6% of discharges, and
-  transfer volume is swept.
-- Step-down beds, OR slots and ventilators are assumed ratios.
-- Road times are free-flow; the 12-minute handover is assumed and swept.
-- Missing the clinical window is a proxy for harm, not a mortality model.
-- The LLM explainer is optional and outside every decision.
+The optional LLM (`mahros/llm/`) only writes explanations. It is off by
+default and never makes a decision.
 
 ## Licence
 

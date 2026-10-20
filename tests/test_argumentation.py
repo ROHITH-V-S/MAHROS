@@ -14,7 +14,6 @@ from mahros.core.types import Acuity, Bid, ResourceType, Specialty, TransferRequ
 from mahros.eval.assignment import INF, linear_sum_assignment, total_cost
 from mahros.eval.stats import paired_t, t_sf, tost_equivalence
 from mahros.hospital.behaviours import (
-    DefensivePolicy,
     HonestPolicy,
     StrategicPolicy,
     assign_policies,

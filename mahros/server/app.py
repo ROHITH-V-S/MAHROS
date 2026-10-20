@@ -61,9 +61,9 @@ def build_net() -> LiveNetwork:
     if STORE is not None:
         net.attach_database(DatabaseSync(STORE))
     else:
-        # 55% occupancy: the 25th percentile of the 3,186 real hospitals in the
-        # HHS reference data, and the regime where a protective hospital
-        # genuinely *has* a bed to give.
+        # 55% occupancy: just under the 25th percentile (56%) of US short-term
+        # acute hospitals in the HHS data (data/us_hhs_2021w02.json), and the regime where a
+        # protective hospital genuinely *has* a bed to give.
         net.seed_load(0.55)
     return net
 
@@ -168,7 +168,7 @@ def err(message: str, status: int = 400) -> JSONResponse:
 def need_db() -> JSONResponse | None:
     if STORE is None or not NET.db_mode:
         return err("No database is connected. Start it with `docker compose up` "
-                   "(see README, 'Run with the database').", 503)
+                   "(see the README).", 503)
     return None
 
 
@@ -213,14 +213,7 @@ def dashboard() -> str:
 
 @app.get("/healthz")
 def healthz():
-    """Liveness probe for the hosting platform.
-
-    Deliberately cheap: platform health checks poll continuously, and the
-    obvious alternative -- pointing them at "/" -- would re-read and return
-    53 KB of console HTML every time. This also reports whether the built
-    results dashboard shipped with the deploy, which is the one thing that
-    silently goes missing if results/dashboard.html was not committed.
-    """
+    """Liveness probe: cheap, and says whether the Results page and database are there."""
     return {
         "status": "ok",
         "hospitals": len(NET.hospitals),

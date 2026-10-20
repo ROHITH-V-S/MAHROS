@@ -59,12 +59,6 @@ class MessageBus:
     def bytes_exchanged(self) -> int:
         return sum(m.size_bytes for m in self.transcript)
 
-    def counts_by_performative(self) -> dict[str, int]:
-        out: dict[str, int] = {}
-        for m in self.transcript:
-            out[m.performative.value] = out.get(m.performative.value, 0) + 1
-        return out
-
     def audit_no_global_view(self, all_hospitals: set[str]) -> dict[str, Any]:
         """Measure how concentrated decision-making and data exposure actually are.
 

@@ -17,8 +17,8 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from ..core.types import Acuity, RequestStatus, TransferRequest
-from ..fairness.metrics import equity_report, gini, jain_index
+from ..core.types import Acuity, RequestStatus
+from ..fairness.metrics import equity_report
 from ..privacy.leakage import measure_leakage
 from .runner import RunResult
 

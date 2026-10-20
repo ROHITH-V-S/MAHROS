@@ -142,8 +142,8 @@ def build_network(cfg: ScenarioConfig) -> list[HospitalConfig]:
             week=cfg.real_week,
             capacity_scale=cfg.capacity_scale,
         ).configs
-        # The scenario's value used to be ignored here: real hospitals kept
-        # HospitalConfig's default (0.14) while the scenario declared 0.18.
+        # Real hospitals take the scenario's escalation rate, not
+        # HospitalConfig's default.
         for c in configs:
             c.escalation_prob = cfg.escalation_prob
         return configs

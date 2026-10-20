@@ -66,8 +66,8 @@ BEDS_PER_OR_SLOT = 30.0
 COORDINATORS_PER_BED = 1 / 150.0
 
 #: Tier boundaries in inpatient beds. These are the p55 / p88 percentiles of the
-#: *national* bed distribution across 3,186 short-term acute hospitals, taken
-#: from the existing vendored HHS summary. Using national percentiles rather
+#: *national* bed distribution across 3,186 short-term acute hospitals, from
+#: the vendored HHS summary `calibration/data/us_hhs_2021w02.json`. Using national percentiles rather
 #: than percentiles of the study cluster means the tier of a hospital does not
 #: depend on which metro it was drawn from.
 TIER2_MIN_BEDS = 154.9

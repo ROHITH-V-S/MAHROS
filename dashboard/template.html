@@ -1191,8 +1191,8 @@ function renderLayers() {
       "Tracks burden against each hospital's share of critical-care capacity, and equity of wait times across patient groups. Reorders clinically comparable options; can never make an unsafe one win.",
       "mahros/fairness/metrics.py · Gini, Jain, equity gap"],
     ["5", "Tamper-evident audit ledger",
-      "Merkle-linked append-only chain by default; a Solidity contract for a permissioned consortium chain when multi-party consensus is needed. Agreements carry their rationale, so the trail explains as well as records.",
-      "mahros/ledger/ · HashChainLedger + MahrosLedger.sol"],
+      "Merkle-linked append-only chain of every agreement and capacity refusal, stored in PostgreSQL next to a trigger-written, hash-chained audit log. Agreements carry their rationale, so the trail explains as well as records.",
+      "mahros/ledger/ · mahros/db/schema.sql"],
   ];
   const host = $("#layer-list");
   layers.forEach(([n, t, d, impl]) => {

@@ -82,12 +82,17 @@ hash-chained audit logs.
 - MAHROS places 13.0 percentage points more patients in time than a phone tree given perfect information (p < 0.0001).
 - Against optimisers that see every hospital's true occupancy: -0.3 pts vs central greedy, +0.4 pts vs batched optimal; equivalent within ±2 points: yes / yes.
 - On an honest network a shared registry ties MAHROS (-0.0 pts, Holm p = 0.8980).
+- With half the hospitals refusing falsely, a shared registry places 68.6% and MAHROS 86.5% (+17.9 pts).
 - With half the hospitals refusing falsely, success falls to 63.7% without checking and holds at 86.5% with it.
+- With half the hospitals protective, checking refusals keeps success at 86.2%; without checking it falls to 64.5%, and without the ledger to 62.4%.
 - Requiring hospitals to sign their refusals gives 62.3% to 86.5% success depending on how often a liar refuses to sign (no checking: 63.7%).
 - A cartel of 6 cuts success to 79.2%; 15% random spot checks bring it back to 90.8%.
 - Checking hospitals already caught more often is no better than uniform 15% spot checks at similar effort (+0.5 pts, p = 0.6581, 111% of the checks).
+- Phoenix (30 hospitals, not re-tuned): MAHROS beats the phone tree by +9.9 to +14.3 points across four real weeks.
 - Simulated occupancy is within 3.8 points of what Houston's hospitals reported (R² 0.95), and 3.0 points for Phoenix (R² 0.97), which was not tuned.
 - 5.4% of Houston's weekly capacity reports and 0.2% of Phoenix's are impossible or look copied (20 of 27 and 3 of 30 hospitals have at least one report that cannot be right).
+- Coordinator time per transfer: 1.1 min with MAHROS, 50.3 min by phone.
+- MAHROS beat the phone tree under every value of every unsourced parameter. Checking refusals adds 21.8 points when protective hospitals lie consistently; when they lie only half the time a second round of asking already recovers almost everything, and checking costs up to 0.4 points.
 <!-- results:end -->
 
 Full tables: [RESULTS.md](RESULTS.md).

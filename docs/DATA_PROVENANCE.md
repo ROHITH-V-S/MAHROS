@@ -81,9 +81,29 @@ Of these, 2 were removed as multi-site system aggregates rather than by a mechan
 
 ### What the assumed rows mean
 
-The HHS dataset reports beds, ICU beds and occupancy. It reports **no** step-down beds, operating-room slots, ventilators or cath labs, and **no** specialty other than paediatric intensive care. Those are generated from declared ratios.
+No public dataset reports step-down beds, operating-room slots or ventilators per hospital, so those three are generated from declared ratios. Everything that decides *who can take a patient* is observed: beds and ICU beds from HHS, specialties and cath-lab rooms from the CMS Provider of Services file, road times from OSRM.
 
-The honest consequence: MAHROS's *capability* model — which hospital can treat what — is assumed rather than observed, except for paediatrics. Since capability is what makes an escalation transfer necessary at all, this is the most important remaining gap. Closing it means joining CMS Care Compare on the CCN, which every facility record already carries.
+### Which patients need moving: real case-mix
+
+What share of transfer requests need each resource (cath lab, neuro ICU, trauma theatre...) is taken from **37,439 real interhospital transfers** in California hospital discharge data for 2021 (HCAI, CC-BY; `experiments/fetch_transfer_mix.py`). Mapping each diagnostic group to a resource, and splitting circulatory transfers 50/50 between cath lab and cardiac ICU, are author decisions stated in `mahros/calibration/case_mix.py`.
+
+| Profile | Share of requests |
+|---|---|
+| `hdu_general` | 19.7% |
+| `icu_general` | 18.2% |
+| `ventilator` | 15.1% |
+| `cath_cardiac` | 12.5% |
+| `icu_cardiac` | 12.5% |
+| `icu_neuro` | 9.1% |
+| `or_general` | 5.7% |
+| `hdu_obstetric` | 3.5% |
+| `or_trauma` | 2.5% |
+| `icu_paediatric` | 1.1% |
+| `icu_burns` | 0.1% |
+
+### The live database starts from the same data
+
+The live console's default data (what *Restore real data* returns to) and the experiments' warm start both fill each ward, step-down and ICU pool to what the hospital reported in the week, using one rule (`mahros/sim/warm_start.py`). ICU occupancy is observed; ward and step-down split the reported inpatient count (derived); OR, ventilator and cath-lab use is not reported anywhere and is labelled assumed.
 
 ## 4. The network as instantiated
 
@@ -134,6 +154,10 @@ A synthetic scenario is made by turning a `surge_multiplier` up. A real scenario
 | `houston_post_pandemic` | 2023-12-10 | Post-pandemic capacity crisis |
 | `houston_icu_scarce` | 2021-07-25 | ICU-scarcity **counterfactual** on real topology |
 | `houston_smoke` | 2021-01-10 | Fast smoke test |
+| `phoenix_calm` | 2021-03-14 |  |
+| `phoenix_baseline` | 2021-01-10 |  |
+| `phoenix_typical` | 2022-07-17 |  |
+| `phoenix_surge` | 2024-01-14 |  |
 
 Worth stating plainly, because it inverts an assumption the synthetic scenarios encoded: **the busiest weeks in this network are not the COVID waves.** Houston ran fuller in late 2023 than in January 2021. The synthetic scenarios were tuned toward 0.70 occupancy; the real network sat between 0.75 and 0.96.
 
@@ -149,6 +173,7 @@ Stated here so it reaches a reader before a reviewer states it first.
 4. **Bed counts are 7-day averages of *staffed* beds**, so they move week to week and can exceed licensed capacity during a surge.
 5. **No behaviour data.** Nothing here observes how hospitals respond to a transfer request, whether they refuse, or whether they refuse honestly. The strategic-refusal model is a declared assumption whose parameters are swept, and it is the central thing this project simulates rather than measures.
 6. **No clinical timing data.** Deterioration timing, safe windows and length-of-stay distributions are modelling assumptions. Length of stay is scaled to a typical US acute figure rather than measured; calibrating it against HCUP or MIMIC-IV is follow-on work.
-7. **Travel times are straight-line**, derived from real coordinates with a fixed handover overhead, not road-network routing.
+7. **Road times are free-flow** (OSRM over OpenStreetMap): no live traffic, no time of day. The 12-minute handover added to every journey is assumed and swept.
+8. **The case-mix is Californian, the network is Texan.** No public transfer-by-diagnosis data exists for Texas. California 2021 is the closest real source; it also shows only 1.6% of discharges were transfers, below the 4.5% the escalation rate is calibrated to.
 
 The claim this data *does* support is narrow and worth stating exactly: **the network's capacity, geography and load are real, and the simulation reproduces the occupancy these hospitals actually reported.** Everything about negotiation behaviour remains simulated.

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..core.types import (
     Acuity,
@@ -90,7 +90,6 @@ class Hospital:
         self.accepted_count: int = 0
         self.sent_count: int = 0
         self.refused_count: int = 0
-        self.local_admissions: int = 0
 
     # -- glue -------------------------------------------------------------- #
     def now(self) -> float:
@@ -114,7 +113,6 @@ class Hospital:
         if pool is None or pool.available <= 0:
             return False
         pool.occupy()
-        self.local_admissions += 1
         return True
 
     def discharge(self, resource: ResourceType) -> None:

@@ -24,7 +24,7 @@ Implementation
 --------------
 The O(n^3) shortest-augmenting-path form of the Hungarian algorithm with dual
 potentials, for rectangular cost matrices with rows <= columns. Validated
-against `scipy.optimize.linear_sum_assignment` in `tests/test_assignment.py`
+against `scipy.optimize.linear_sum_assignment` in `tests/test_argumentation.py`
 when scipy is present.
 """
 

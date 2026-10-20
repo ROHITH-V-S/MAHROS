@@ -5,10 +5,6 @@ per-hospital, plus regex scrubbing of the usual direct identifiers.
 Deterministic, so the same patient maps to the same token within a hospital and
 to a *different* token across hospitals (prevents cross-site linkage).
 
-An optional Microsoft Presidio backend existed in earlier versions. It was
-removed: MAHROS handles no real patient data, so a heavyweight NLP
-de-identification stack added a dependency without adding a result.
-
 Design note for the paper: the pseudonym is per-(hospital, salt) so a receiving
 hospital cannot correlate a patient across the network, but the *origin* can
 always resolve its own token back to the MRN. That is the standard

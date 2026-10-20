@@ -75,7 +75,7 @@ import hashlib
 import hmac
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 #: The predicates a hospital may attest to. Deliberately few, and each is the
@@ -295,10 +295,6 @@ class AuditReferral:
             "false_positive_rate": round(self.false_positive_rate, 4),
             "status": "referral_for_audit -- NOT a finding of dishonesty",
         }
-
-
-#: Backwards-compatible alias. The old name overclaimed.
-PerjuryFinding = AuditReferral
 
 
 class AttestationAuthority:

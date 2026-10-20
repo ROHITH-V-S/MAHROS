@@ -10,12 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 
-# Deliberately minimal. The core simulation runs on the standard library alone;
-# these three are for the CLI and the plotting scripts. Everything else is optional.
-dependencies = [
-    "typer>=0.12",
-    "rich>=13.0",
-]
+# The core simulation runs on the standard library alone. Everything else is
+# optional and grouped by use below.
+dependencies = []
 
 [project.optional-dependencies]
 # Live demo console: python -m mahros.server
@@ -24,8 +21,6 @@ demo = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 analysis = ["numpy>=1.24", "pandas>=2.0", "matplotlib>=3.7"]
 # PostgreSQL: the live console's database, audit log and records.
 db = ["psycopg[binary]>=3.1"]
-# On-chain audit against a local Hardhat/Anvil node (falls back to the hash chain).
-chain = ["web3>=6.0"]
 # Real asymmetric signatures for attested refusals. Without this the
 # attestation layer falls back to HMAC-SHA256, which models the protocol
 # faithfully but does NOT provide non-repudiation -- a shared secret means the
@@ -37,9 +32,6 @@ attest = ["cryptography>=42.0"]
 # library, and tests/test_argumentation.py skips these checks when absent.
 verify = ["scipy>=1.10"]
 dev = ["pytest>=7.0", "httpx>=0.27"]
-
-[project.scripts]
-mahros = "mahros.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["mahros*"]

@@ -174,10 +174,9 @@ def defence_wording(hospital: str, reason: str, req) -> str:
 
     Keyed on the reason actually given, because the reasons are not
     interchangeable. "We do not operate an ICU" is a permanent fact about the
-    building; "our ICU is full" is a statement about this afternoon. A single
-    sentence covering both -- which is what this used to be -- produced a
-    console that told a hospital with no ICU that circumstances had changed
-    since an earlier admission it never made.
+    building; "our ICU is full" is a statement about this afternoon. One
+    sentence for both would tell a hospital with no ICU that circumstances had
+    changed since an admission it never made.
     """
     thing = resource_phrase(req.resource)
     service = service_phrase(req.resource)
@@ -570,9 +569,8 @@ class ContractNetNegotiator:
                     "defender": bid.bidder,
                     "upheld": upheld,
                     "reason": bid.refusal_reason,
-                    # The console used to hardcode one capacity-flavoured
-                    # sentence here regardless of what was claimed. Send the
-                    # real wording so the UI shows the argument that was made.
+                    # The real wording, so the console shows the argument
+                    # that was actually made.
                     "claim": defence_wording(bid.bidder, bid.refusal_reason, req),
                     "attested": bool(self.attestation is not None
                                      and self.config.attestation_enabled),

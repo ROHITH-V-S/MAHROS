@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..core.types import TransferRequest
 from ..fairness.metrics import FairnessLedger
@@ -117,11 +117,6 @@ class LLMCoordinator:
             }
         )
         return decision
-
-    def explain(self, req: TransferRequest, chosen: ScoredBid, scored: list[ScoredBid]) -> str:
-        """Narrative explanation for an already-made decision (the default path)."""
-        d = self.arbitrate(req, scored, FairnessLedger([]), req.awarded_at or 0.0)
-        return d.rationale
 
     # -- prompt ------------------------------------------------------------ #
     @staticmethod

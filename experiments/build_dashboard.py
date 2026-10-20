@@ -28,11 +28,10 @@ TESTS_TOKEN = "__MAHROS_TESTS__"
 def collected_test_count() -> str:
     """Ask pytest how many tests it collects.
 
-    The count used to be typed into the template by hand, drifted to 27 while
-    the suite grew to 79, and shipped that way to a public deployment. Counting
-    `def test_` is not enough either -- parametrised cases make pytest collect
-    more than there are functions. So we ask pytest, and fall back rather than
-    breaking the build if it is not installed.
+    A hand-typed count drifts. Counting `def test_` is not enough either:
+    parametrised cases make pytest collect more than there are functions. So
+    we ask pytest, and fall back rather than breaking the build if it is not
+    installed.
     """
     import re
     import subprocess

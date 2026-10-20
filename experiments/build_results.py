@@ -4,9 +4,8 @@
 
 Numbers are read from results/*.json and nowhere else. The README and
 docs/PANEL_GUIDE.md each carry a block between markers that this script
-rewrites; the rest of those files is hand-written and quotes no results.
-That is the fix for numbers that used to be copied by hand into four
-documents and drift apart.
+rewrites; the rest of those files is hand-written and quotes no results,
+so the documents cannot drift apart.
 
 A result file that does not exist yet is reported as "not built", never
 filled in from memory.
@@ -16,7 +15,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

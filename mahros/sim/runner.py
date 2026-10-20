@@ -26,14 +26,11 @@ from typing import Any
 
 from ..core.clock import Simulator
 from ..core.types import (
-    Acuity,
     Patient,
     RequestStatus,
-    ResourceType,
-    Specialty,
     TransferRequest,
 )
-from ..fairness.metrics import FairnessLedger, equity_report
+from ..fairness.metrics import FairnessLedger
 from ..hospital.behaviours import assign_policies
 from ..hospital.hospital import Hospital, HospitalConfig
 from ..ledger.interface import HashChainLedger, LedgerBackend

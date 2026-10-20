@@ -1,8 +1,7 @@
 """Which patients need moving, and for what: from real California transfers.
 
 The escalation case-mix (what share of transfer requests need a cath lab, a
-neuro ICU, a trauma theatre...) used to be a tuned guess. Real networks now
-take it from 37,439 interhospital transfers recorded in California hospital
+neuro ICU, a trauma theatre...) on real networks comes from 37,439 interhospital transfers recorded in California hospital
 discharge data for 2021 (see experiments/fetch_transfer_mix.py).
 
 Two steps are author decisions, stated here so they can be challenged:

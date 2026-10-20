@@ -24,14 +24,13 @@ from typing import Any
 
 from ..core.types import (
     Acuity,
-    DemographicGroup,
     Patient,
     ResourceType,
     Specialty,
     TransferRequest,
 )
 from ..fairness.metrics import FairnessLedger, equity_report
-from ..hospital.behaviours import POLICIES, HonestPolicy, StrategicPolicy
+from ..hospital.behaviours import POLICIES, HonestPolicy
 from ..hospital.hospital import Hospital
 from ..ledger.interface import HashChainLedger
 from ..llm.coordinator import LLMCoordinator

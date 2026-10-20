@@ -3,11 +3,10 @@
     python -m mahros.server
     python -m mahros.server --port 9000 --reload
 
-Hosting platforms (Render, Railway, Fly) assign a port at runtime and require
-the process to listen on all interfaces, so HOST and PORT are read from the
-environment when no flag is given. Locally nothing changes: the defaults stay
-127.0.0.1:8000, which is deliberate -- a demo server should not bind to every
-interface on someone's laptop unless asked.
+HOST and PORT are read from the environment when no flag is given (Docker sets
+them to listen on all interfaces). Otherwise the server stays on
+127.0.0.1:8000: a demo server should not bind to every interface on someone's
+laptop unless asked.
 """
 
 from __future__ import annotations
