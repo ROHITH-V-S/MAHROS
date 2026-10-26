@@ -82,6 +82,44 @@ class BurdenRecord:
         return self.accepted - self.sent
 
 
+class ReliabilityLedger:
+    """How often each hospital gives back a bed it was awarded.
+
+    A give-back (declined, or no answer in time) costs the patient time: they
+    have to be offered out again. So the scorer ranks a hospital that does it
+    often a little lower. Smoothed with `prior` clean awards, so one bad day
+    does not brand a hospital: one give-back out of one award is a rate of
+    1/3, not 1.
+
+    With no give-backs the rate is exactly 0 and scoring is unchanged -- the
+    batch experiments never decline a bed, so none of their results move.
+    """
+
+    def __init__(self, prior: int = 2) -> None:
+        self.prior = prior
+        self.awarded: dict[str, int] = {}
+        self.given_back: dict[str, int] = {}
+
+    def record_award(self, hospital: str) -> None:
+        self.awarded[hospital] = self.awarded.get(hospital, 0) + 1
+
+    def record_give_back(self, hospital: str) -> None:
+        self.given_back[hospital] = self.given_back.get(hospital, 0) + 1
+
+    def rate(self, hospital: str) -> float:
+        """Share of awarded beds given back, smoothed, in [0, 1)."""
+        back = self.given_back.get(hospital, 0)
+        if back == 0:
+            return 0.0
+        return back / (max(self.awarded.get(hospital, 0), back) + self.prior)
+
+    def summary(self) -> dict[str, dict[str, float]]:
+        return {h: {"awarded": self.awarded.get(h, 0),
+                    "given_back": self.given_back.get(h, 0),
+                    "rate": round(self.rate(h), 3)}
+                for h in sorted(set(self.awarded) | set(self.given_back))}
+
+
 class FairnessLedger:
     """Rolling record of who has been carrying the load.
 
@@ -107,6 +145,18 @@ class FairnessLedger:
         rec.accepted += 1
         rec.accepted_los_minutes += los_minutes
         self.recent.append(hospital)
+
+    def withdraw_accept(self, hospital: str, los_minutes: float = 0.0) -> None:
+        """Undo one acceptance: the hospital gave the bed back, so it carries nothing."""
+        rec = self.records.get(hospital)
+        if rec is None or rec.accepted <= 0:
+            return
+        rec.accepted -= 1
+        rec.accepted_los_minutes = max(0.0, rec.accepted_los_minutes - los_minutes)
+        for i in range(len(self.recent) - 1, -1, -1):     # the most recent one
+            if self.recent[i] == hospital:
+                del self.recent[i]
+                break
 
     def record_send(self, hospital: str) -> None:
         self.records.setdefault(hospital, BurdenRecord()).sent += 1

@@ -57,6 +57,8 @@ def _friendly(exc: Exception) -> str:
     if "occupied_within_capacity" in msg:
         return ("Occupancy must be between 0 and the pool's real capacity "
                 "(the database refused it).")
+    if "bed_confirmations_once" in msg:
+        return "This bed has already been confirmed or declined."
     if msg.startswith("permission denied"):
         return ("The database refused this change: real data (capacity, "
                 "specialties, HHS reports) is locked.")
@@ -94,6 +96,8 @@ class Store:
                                         (actor,))
                         yield cur
             except psycopg.errors.CheckViolation as exc:
+                raise DataError(_friendly(exc)) from exc
+            except psycopg.errors.UniqueViolation as exc:
                 raise DataError(_friendly(exc)) from exc
             except psycopg.errors.InsufficientPrivilege as exc:
                 raise DataError(_friendly(exc)) from exc
@@ -422,6 +426,10 @@ class Store:
             allocation = cur.fetchone()
             cur.execute("SELECT * FROM admissions WHERE request_id = %s", (request_id,))
             admission = cur.fetchone()
+            cur.execute("SELECT * FROM bed_confirmations WHERE request_id = %s "
+                        "OR previous_request_id = %s ORDER BY confirmation_id",
+                        (request_id, request_id))
+            confirmations = cur.fetchall()
             block = None
             if allocation and allocation["ledger_block"] is not None:
                 cur.execute("SELECT * FROM ledger_blocks WHERE epoch = %s "
@@ -435,6 +443,7 @@ class Store:
                 pks.append(("allocations", allocation["allocation_id"]))
             if admission:
                 pks.append(("admissions", str(admission["admission_id"])))
+            pks += [("bed_confirmations", str(c["confirmation_id"])) for c in confirmations]
             cur.execute("""
                 SELECT audit_id, ts, actor, action, table_name, row_pk, row_hash
                 FROM audit_log
@@ -443,7 +452,184 @@ class Store:
             audit = cur.fetchall()
         return {"request": req, "decisions": decisions, "challenges": challenges,
                 "allocation": allocation, "admission": admission,
+                "confirmations": confirmations,
                 "ledger_block": block, "audit": audit}
+
+    # -- bed confirmation (the receiving hospital's side) -------------------- #
+    def inbox(self, hospital_id: str) -> dict[str, Any]:
+        """Patients whose bed this hospital is holding, and what it decided lately.
+
+        A transfer is waiting when it was awarded to this hospital in the
+        current session, the patient is still admitted, and nobody has
+        confirmed or declined the bed yet.
+        """
+        with self.tx() as cur:
+            cur.execute("SELECT max(epoch) AS e FROM live_epochs")
+            epoch = cur.fetchone()["e"]
+            cur.execute("""
+                SELECT t.request_id, t.origin_id, o.name AS origin_name,
+                       t.resource_kind, t.specialty, t.acuity, t.window_minutes,
+                       p.pseudonym AS patient_ref, al.time_to_care_minutes,
+                       al.slack_minutes, al.created_at AS awarded_at,
+                       extract(epoch FROM now() - al.created_at) AS waiting_seconds,
+                       ro.previous_request_id, pd.hospital_id AS declined_by,
+                       ph.name AS declined_by_name, pd.reason AS declined_reason
+                FROM allocations al
+                JOIN transfer_requests t ON t.request_id = al.request_id
+                JOIN admissions ad ON ad.admission_id = al.admission_id
+                JOIN patients p ON p.patient_id = t.patient_id
+                JOIN hospitals o ON o.hospital_id = t.origin_id
+                LEFT JOIN bed_confirmations ro
+                       ON ro.request_id = t.request_id AND ro.outcome = 'reoffered'
+                LEFT JOIN bed_confirmations pd
+                       ON pd.request_id = ro.previous_request_id AND pd.outcome = 'declined'
+                LEFT JOIN hospitals ph ON ph.hospital_id = pd.hospital_id
+                WHERE al.receiver_id = %s AND t.epoch = %s
+                  AND ad.discharged_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM bed_confirmations c
+                                  WHERE c.request_id = t.request_id
+                                    AND c.outcome IN ('confirmed', 'declined'))
+                ORDER BY al.created_at DESC""", (hospital_id, epoch))
+            waiting = cur.fetchall()
+            cur.execute("""
+                SELECT c.request_id, c.outcome, c.reason, c.created_at,
+                       t.origin_id, o.name AS origin_name, t.resource_kind, t.acuity,
+                       (SELECT r.request_id FROM bed_confirmations r
+                        WHERE r.previous_request_id = c.request_id
+                          AND r.outcome = 'reoffered' LIMIT 1) AS reoffer_id,
+                       (SELECT r.hospital_id FROM bed_confirmations r
+                        WHERE r.previous_request_id = c.request_id
+                          AND r.outcome = 'reoffered' LIMIT 1) AS reoffer_to
+                FROM bed_confirmations c
+                JOIN transfer_requests t ON t.request_id = c.request_id
+                JOIN hospitals o ON o.hospital_id = t.origin_id
+                WHERE c.hospital_id = %s AND t.epoch = %s
+                  AND c.outcome IN ('confirmed', 'declined')
+                ORDER BY c.created_at DESC LIMIT 20""", (hospital_id, epoch))
+            decided = cur.fetchall()
+            cur.execute("""
+                SELECT al.receiver_id AS hospital_id, count(*) AS n
+                FROM allocations al
+                JOIN transfer_requests t ON t.request_id = al.request_id
+                JOIN admissions ad ON ad.admission_id = al.admission_id
+                WHERE t.epoch = %s AND ad.discharged_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM bed_confirmations c
+                                  WHERE c.request_id = t.request_id
+                                    AND c.outcome IN ('confirmed', 'declined'))
+                GROUP BY al.receiver_id""", (epoch,))
+            counts = {r["hospital_id"]: r["n"] for r in cur.fetchall()}
+        return {"hospital_id": hospital_id, "waiting": waiting, "decided": decided,
+                "waiting_by_hospital": counts}
+
+    def unanswered(self, older_than_seconds: float, since) -> list[str]:
+        """Held beds nobody has confirmed or declined in time (current session).
+
+        Only beds held after `since` count: the time limit applies from the
+        moment it was switched on, never retroactively.
+        """
+        with self.tx() as cur:
+            cur.execute("""
+                SELECT al.request_id
+                FROM allocations al
+                JOIN transfer_requests t ON t.request_id = al.request_id
+                JOIN admissions ad ON ad.admission_id = al.admission_id
+                WHERE t.epoch = (SELECT max(epoch) FROM live_epochs)
+                  AND ad.discharged_at IS NULL
+                  AND al.created_at >= %s
+                  AND al.created_at < now() - make_interval(secs => %s)
+                  AND NOT EXISTS (SELECT 1 FROM bed_confirmations c
+                                  WHERE c.request_id = t.request_id
+                                    AND c.outcome IN ('confirmed', 'declined'))
+                ORDER BY al.created_at""", (since, older_than_seconds))
+            return [r["request_id"] for r in cur.fetchall()]
+
+    def reoffer_chain(self, request_id: str) -> dict[str, Any]:
+        """How many times this patient has already been passed on, and who was second.
+
+        `runner_up` is the hospital the original award ranked second, read
+        from the recorded award decision -- so the screen can say whether the
+        re-offer went to the second choice or the second choice had filled up.
+        """
+        with self.tx() as cur:
+            cur.execute("""
+                WITH RECURSIVE chain(request_id, depth) AS (
+                    SELECT %s::text, 0
+                    UNION ALL
+                    SELECT c.previous_request_id, chain.depth + 1
+                    FROM bed_confirmations c JOIN chain ON c.request_id = chain.request_id
+                    WHERE c.outcome = 'reoffered' AND chain.depth < 50)
+                SELECT max(chain.depth) AS hops,
+                       array_remove(array_agg(DISTINCT d.hospital_id), NULL) AS declined
+                FROM chain
+                LEFT JOIN bed_confirmations d
+                       ON d.request_id = chain.request_id AND d.outcome = 'declined'
+                """, (request_id,))
+            row = cur.fetchone()
+            hops, declined = row["hops"] or 0, list(row["declined"] or [])
+            cur.execute("SELECT payload->>'runner_up' AS r FROM agent_decisions "
+                        "WHERE request_id = %s AND action = 'award'", (request_id,))
+            row = cur.fetchone()
+        #: Every hospital that already declined this patient, earlier in the
+        #: chain: none of them is asked again.
+        return {"hops": hops, "runner_up": row["r"] if row else None,
+                "declined": declined}
+
+    def _held_bed(self, cur, request_id: str) -> dict:
+        """The bed a hospital is holding for this request, if it still is."""
+        cur.execute("""
+            SELECT al.allocation_id, al.receiver_id, al.admission_id, ad.resource_id,
+                   ad.discharged_at, ad.expected_los_minutes,
+                   t.origin_id, t.resource_kind, t.specialty, t.acuity,
+                   t.window_minutes, t.sim_minute, p.pseudonym AS patient_ref,
+                   EXISTS (SELECT 1 FROM bed_confirmations c
+                           WHERE c.request_id = t.request_id
+                             AND c.outcome IN ('confirmed', 'declined')) AS decided
+            FROM allocations al
+            JOIN transfer_requests t ON t.request_id = al.request_id
+            JOIN admissions ad ON ad.admission_id = al.admission_id
+            JOIN patients p ON p.patient_id = t.patient_id
+            WHERE al.request_id = %s""", (request_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise DataError(f"No hospital is holding a bed for {request_id}.")
+        if row["decided"]:
+            raise DataError("This bed has already been confirmed or declined.")
+        if row["discharged_at"] is not None:
+            raise DataError("This patient is no longer admitted there "
+                            "(the data was restored since).")
+        return row
+
+    def confirm_bed(self, actor: str, request_id: str) -> dict[str, Any]:
+        with self.tx(actor) as cur:
+            held = self._held_bed(cur, request_id)
+            cur.execute("INSERT INTO bed_confirmations (request_id, hospital_id, outcome) "
+                        "VALUES (%s, %s, 'confirmed')", (request_id, held["receiver_id"]))
+        return {"request_id": request_id, "hospital_id": held["receiver_id"],
+                "outcome": "confirmed"}
+
+    def decline_bed(self, actor: str, request_id: str, reason: str) -> dict[str, Any]:
+        """Free the held bed and record why. The caller then re-offers the patient."""
+        if reason not in ("equipment_fault", "bed_not_ready", "no_staff", "other",
+                          "no_response"):
+            raise DataError(f"Unknown reason {reason!r}.")
+        with self.tx(actor) as cur:
+            held = self._held_bed(cur, request_id)
+            cur.execute("UPDATE admissions SET discharged_at = now(), "
+                        "discharge_reason = %s WHERE admission_id = %s",
+                        (f"bed declined: {reason}", held["admission_id"]))
+            cur.execute("UPDATE resources SET occupied = occupied - 1 "
+                        "WHERE resource_id = %s AND occupied > 0", (held["resource_id"],))
+            cur.execute("INSERT INTO bed_confirmations (request_id, hospital_id, outcome, "
+                        "reason) VALUES (%s, %s, 'declined', %s)",
+                        (request_id, held["receiver_id"], reason))
+        return dict(held)
+
+    def record_reoffer(self, actor: str, request_id: str, previous_request_id: str,
+                       hospital_id: str | None) -> None:
+        with self.tx(actor) as cur:
+            cur.execute("INSERT INTO bed_confirmations (request_id, hospital_id, outcome, "
+                        "previous_request_id) VALUES (%s, %s, 'reoffered', %s)",
+                        (request_id, hospital_id, previous_request_id))
 
     def epoch_history(self, epoch: int) -> dict[str, Any]:
         """What the engine needs to resume a session after a restart."""
@@ -453,7 +639,11 @@ class Store:
                 FROM allocations a
                 JOIN transfer_requests t USING (request_id)
                 LEFT JOIN admissions ad ON ad.admission_id = a.admission_id
-                WHERE t.epoch = %s ORDER BY t.created_at""", (epoch,))
+                WHERE t.epoch = %s
+                  AND NOT EXISTS (SELECT 1 FROM bed_confirmations c
+                                  WHERE c.request_id = a.request_id
+                                    AND c.outcome = 'declined')
+                ORDER BY t.created_at""", (epoch,))
             allocations = cur.fetchall()
             cur.execute("""
                 SELECT d.action, d.hospital_id, count(*) AS n
@@ -465,7 +655,14 @@ class Store:
             cur.execute("SELECT count(*) AS n, max(sim_minute) AS last "
                         "FROM transfer_requests WHERE epoch = %s", (epoch,))
             totals = cur.fetchone()
-        return {"allocations": allocations, "counts": counts,
+            # Beds awarded and then given back (declined, or no answer).
+            cur.execute("""
+                SELECT c.hospital_id FROM bed_confirmations c
+                JOIN transfer_requests t ON t.request_id = c.request_id
+                WHERE t.epoch = %s AND c.outcome = 'declined'
+                ORDER BY c.confirmation_id""", (epoch,))
+            given_back = [r["hospital_id"] for r in cur.fetchall()]
+        return {"allocations": allocations, "counts": counts, "given_back": given_back,
                 "transfers": totals["n"], "last_sim_minute": totals["last"]}
 
     # -- Regional Monitor: where the network is running out ---------------- #

@@ -1,0 +1,177 @@
+% =========================================================================
+\section{Implementation}
+\label{sec:implementation}
+% =========================================================================
+
+\subsection{Software Organisation}
+The engine is a Python package whose modules correspond one-to-one to the layers of Fig.~\ref{fig:arch}:
+\begin{itemize}
+\setlength{\itemsep}{1pt}
+\item \texttt{hospital/}: resource agents, hospital agent and behaviour policies.
+\item \texttt{negotiation/}: Contract Net, challenge engine, argumentation, attestation, collusion, scoring and message bus.
+\item \texttt{sim/}: real-network builder, warm start, scenarios, the five baselines, event loop and metrics.
+\item \texttt{calibration/}: vendored HHS, CMS, OSRM and HCAI data with their loaders.
+\item \texttt{ledger/}, \texttt{integrity/}, \texttt{fairness/}, \texttt{privacy/} and \texttt{eval/}: the hash-chained ledger, the Data Integrity rules, burden metrics, pseudonymisation and leakage model, and statistics with a Hungarian solver.
+\item \texttt{db/}: PostgreSQL schema, store and live synchronisation.
+\item \texttt{server/}: FastAPI application and the browser console.
+\end{itemize}
+The core uses only the Python standard library, so every experiment runs without building an environment. Each experiment is one script that writes a JSON result file. A build script regenerates the results document from those files, and the figures in this paper are drawn from data tables generated the same way, so no reported number is typed by hand.
+
+\subsection{Simulation Engine}
+The simulator is a discrete-event loop over a priority queue of timed events: admission, escalation, negotiation, care start, expiry, discharge and periodic sampling. Each run is fully determined by \texttt{(scenario, seed)}. All random streams, including hospital behaviour and spot-check selection, are seeded from SHA-256 digests rather than Python's per-process randomised \texttt{hash()}, and a regression test checks that a run reproduces exactly in a fresh process. Every strategy, MAHROS and baselines alike, implements one interface, \texttt{resolve(request, now)}, and runs in the same loop on the same patient stream, so differences in outcome come from the allocation logic alone.
+
+\subsection{Message Bus and Decentralisation Audit}
+All inter-agent traffic passes through a message bus that records FIPA-style performatives (\textsc{cfp}, \textsc{propose}, \textsc{refuse}, \textsc{accept-proposal}, \textsc{reject-proposal}) with sender, receiver and payload. Baselines log their traffic to the same bus, including every telephone answer, so all arms are audited on equal terms. The bus computes the decision concentration, the largest share of capacity-bearing messages received by any single node, and checks that no node obtains a global view.
+
+Table~\ref{tab:messages} lists every message type and its exact payload. No field carries an occupancy count, a bed count or a patient identity.
+
+\begin{table}[!t]
+\centering
+\caption{Protocol Messages and Payloads}
+\label{tab:messages}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{1.55cm}p{1.6cm}p{4.35cm}@{}}
+\toprule
+Performative & Direction & Payload fields \\
+\midrule
+\textsc{cfp} & origin $\to$ peer & request id, origin, pseudonymous patient token, resource, specialty, acuity, created / expires time, expected stay \\
+\textsc{propose} & peer $\to$ origin & feasible, time to care, capability match \\
+\textsc{refuse} & peer $\to$ origin & feasible = false, reason code \\
+\textsc{accept-proposal} & origin $\to$ winner & time to care \\
+\textsc{reject-proposal} & origin $\to$ others & none \\
+challenge / defence & within $\mathcal{AF}$ & claim text, reason code, evidence (ledger ids) \\
+attestation & peer $\to$ verifier & hospital, request, resource, predicate, time, nonce, two Ed25519 signatures \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Privacy Measure}
+\label{sec:privacy}
+For a pool of capacity $c$, an observer's prior over occupancy is uniform on $\{0,\dots,c\}$. A message consistent with a subset $\mathcal{S}$ of occupancy levels discloses
+\begin{equation}
+  I = \log_2(c+1) - \log_2|\mathcal{S}|\ \text{bits}.
+  \label{eq:bits}
+\end{equation}
+A \mahros{} offer rules out only the levels at or above the reserve, about 0.06 bits on a 26-bed ICU. A capacity refusal bounds occupancy to the top few levels, about 3.2 bits. A centralised message carrying strain reveals all $\log_2(c+1)$ bits. Attestation adds nothing, because the signed predicate is exactly what the refusal already asserted. Patients are referenced only by an HMAC-SHA256 pseudonym, and free-text notes pass through a pattern-based scrubber for names, record numbers, phone numbers, dates and e-mail addresses before anything leaves the origin.
+
+\subsection{Data Integrity Rules}
+\label{sec:integrity-rules}
+The Data Integrity agent applies hand-checkable rules to every real weekly report. A report is \emph{red} (impossible as reported) if any of the following holds:
+\begin{itemize}
+\setlength{\itemsep}{0pt}
+\item it shows more inpatients than staffed beds, more ICU patients than ICU beds, or more ICU beds than inpatient beds (with a 0.5 tolerance for 7-day averaging);
+\item it reports zero inpatients in a staffed hospital that reports patients in other weeks;
+\item its bed count is below half the median of the surrounding $\pm8$ weeks.
+\end{itemize}
+A report is \emph{amber} (looks copied or stale) if the same non-zero inpatient count appears four or more weeks running, or if occupancy jumps by at least 30 points for one week and returns to within 10 points. Flags are stored in the \texttt{report\_flags} table and shown per hospital in the console.
+
+\subsection{Deployment Architecture}
+Figure~\ref{fig:deploy} shows the Docker Compose deployment. On start, the application container initialises the schema idempotently, loads the vendored real data through the privileged loader role, and serves the console and API through an unprivileged application role.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >=Stealth,
+  ctr/.style={draw=cM!70, fill=cM!6, rounded corners=2pt, align=center, minimum width=2.4cm, minimum height=1.25cm},
+  usr/.style={draw=gray!70, fill=gray!10, rounded corners=2pt, align=center, minimum width=1.6cm, minimum height=0.8cm}]
+\draw[dashed, gray!70, rounded corners] (-0.2,-2.75) rectangle (8.25,0.95);
+\node[font=\tiny, gray!70!black, anchor=north west] at (-0.15,0.92) {Docker Compose project \texttt{mahros-main}};
+\node[ctr] (app) at (1.3,-0.5) {\textbf{app}\\Python 3.13\\FastAPI + engine\\port 8090};
+\node[ctr] (db) at (4.25,-0.5) {\textbf{db}\\PostgreSQL 16\\volume \texttt{pgdata}\\port 5440};
+\node[ctr] (pga) at (7.0,-0.5) {\textbf{pgadmin}\\pgAdmin 8\\inspect / tamper\\port 5051};
+\node[usr] (br) at (1.3,-2.15) {Browser\\(console)};
+\node[usr] (rv) at (7.0,-2.15) {Reviewer};
+\draw[<->] (app) -- node[above, font=\tiny]{app role} (db);
+\draw[<->] (pga) -- node[above, font=\tiny]{admin} (db);
+\draw[<->] (br) -- node[right, font=\tiny]{HTTP + WebSocket} (app);
+\draw[<->] (rv) -- (pga);
+\end{tikzpicture}
+\caption{Deployment: three containers started by one \texttt{docker compose up}. Data persist in a named volume; \texttt{down -v} reloads the real data.}
+\label{fig:deploy}
+\end{figure}
+
+\subsection{API Specification}
+Table~\ref{tab:api} lists the principal HTTP endpoints of the FastAPI application. A WebSocket at \texttt{/ws} streams the protocol steps of each live transfer.
+
+\begin{table}[!t]
+\centering
+\caption{Principal API Endpoints}
+\label{tab:api}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lp{3.55cm}p{2.55cm}@{}}
+\toprule
+Method & Endpoint & Purpose \\
+\midrule
+POST & \texttt{/api/transfer} & run one negotiation; persist it \\
+GET  & \texttt{/api/state}, \texttt{/api/scenarios} & network state; available weeks \\
+POST & \texttt{/api/occupancy}, \texttt{/api/policy} & edit live occupancy / behaviour \\
+POST & \texttt{/api/fairness}, \texttt{/api/argumentation} & ablation switches \\
+GET  & \texttt{/api/hospitals}, \texttt{.../\{id\}/history} & hospital data and audited edits \\
+POST & \texttt{/api/restore}, \texttt{.../\{id\}/restore} & restore reported data \\
+GET  & \texttt{/api/integrity}, \texttt{/api/data-integrity} & accountability; report flags \\
+GET  & \texttt{/api/bottlenecks} & Regional Monitor \\
+GET  & \texttt{/api/ledger}, \texttt{/api/ledger/verify} & ledger state; verification \\
+GET  & \texttt{/api/audit}, \texttt{/api/audit/verify} & audit log; chain verification \\
+POST & \texttt{/api/audit/checkpoint} & anchor the chain head \\
+POST & \texttt{/api/tamper} & demonstration: alter a ledger record \\
+GET  & \texttt{/api/transfers}, \texttt{/api/transfers/\{id\}} & transfer history; full record \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Security, Privacy and Error Handling}
+The application role can write only the live columns it needs (\texttt{occupied}, \texttt{policy}, discharge fields) and insert records; it cannot modify reference data, records or the audit log. The audit and checkpoint functions run as security definers under an advisory lock, so concurrent writers cannot fork the chain. Each live negotiation, including its request, agent decisions, challenges, allocation and ledger block, is written in a single transaction, and a failed write is reported to the caller (HTTP 500) rather than silently dropped. If the database is unreachable, the console continues in memory and displays ``not saving''. Occupancy edits beyond capacity are rejected by the API and, independently, by a \texttt{CHECK} constraint. A transfer that loses a reservation race is re-awarded to the next bid, and a reservation that lapses before arrival triggers renegotiation. The optional language-model coordinator only writes explanations, is off by default, and never decides an award.
+
+Table~\ref{tab:threats} maps each tampering attempt to the control that stops or detects it, and to the test that verifies the control.
+
+\begin{table}[!t]
+\centering
+\caption{Tampering Attempts, Controls and Verifying Tests}
+\label{tab:threats}
+\scriptsize
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular}{@{}p{2.3cm}p{2.1cm}p{3.15cm}@{}}
+\toprule
+Attempt & Control & Verified by \\
+\midrule
+App changes a capacity & column grant + trigger & DB test, app role: update rejected \\
+Owner edits real data & \texttt{BEFORE} trigger & DB test, owner role: update rejected \\
+App edits a record & insert-only grants & DB test: update/delete denied \\
+Occupancy $>$ capacity & \texttt{CHECK} constraint & DB test with validation bypassed \\
+Edit an audit row & hash recomputation & DB test: verify reports ``contents changed'' \\
+Delete an audit row & chain link check & DB test: verify reports ``link broken'' \\
+Truncate the log tail & checkpoint & DB test: checkpoint mismatch \\
+Alter a signed refusal & Ed25519 verify & attestation test: every field \\
+Forge the co-signature & independent key & attestation test: forgery rejected \\
+Rewrite the whole chain & external checkpoint & procedural (outside the database) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Testing}
+Table~\ref{tab:tests} summarises the 205 test functions by area. Database tests run against a live PostgreSQL instance as both owner and application role, and an API smoke test exercises every database endpoint of a running deployment.
+
+\begin{table}[!t]
+\centering
+\caption{Test Suite Coverage (205 Test Functions)}
+\label{tab:tests}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lrp{3.95cm}@{}}
+\toprule
+File & Tests & Representative properties \\
+\midrule
+\texttt{test\_argumentation} & 29 & reinstatement; even cycle undecided; honest never overruled; never compelled beyond capacity \\
+\texttt{test\_real\_network} & 38 & real network build, capability join, Erlang fit, provenance \\
+\texttt{test\_core} & 25 & same seed same result in a fresh process; $t$-test vs.\ \texttt{scipy}; TOST; Hungarian \\
+\texttt{test\_db} & 24 & owner cannot change real data; edited or deleted audit row breaks chain; checkpoint catches truncation \\
+\texttt{test\_server} & 23 & API and console behaviour \\
+\texttt{test\_attestation} & 21 & any field tamper fails verification; co-signature unforgeable \\
+\texttt{test\_collusion} & 18 & abstention beats ledger; spot checks never punish honest refusals \\
+\texttt{test\_integrity\_rules} & 10 & each red/amber rule on hand-built series \\
+\texttt{test\_ledger\_index} & 6 & indexed lookups equal full scans \\
+\texttt{test\_case\_mix} + \texttt{warm\_start} & 11 & case-mix shares; length-biased remaining stay \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,41 @@
+% =========================================================================
+\section{Introduction}
+\label{sec:intro}
+% =========================================================================
+
+\subsection{Background}
+\IEEEPARstart{A}{} patient admitted to a community hospital can deteriorate in ways that hospital is not equipped to manage. A suspected ST-elevation myocardial infarction needs a catheterisation laboratory, an intracranial bleed needs neurosurgery, and respiratory failure needs a staffed ICU bed and a ventilator. When the admitting hospital has none of these free, the patient must be moved to one that does. Such \emph{escalation transfers} are routine: in a national Medicare cohort about 4.5\% of critical-care stays involved an inter-hospital transfer, and transfers flowed along a structured hub-and-spoke network of community hospitals and tertiary centres \cite{iwashyna2009networks}. Time matters. Among deteriorating ward patients, each hour of delay before ICU transfer was associated with about a 3\% increase in the adjusted odds of death \cite{churpek2016delay}. Delay is mostly organisational rather than geographical. Across 49 UK hospitals, transfer delays correlated only weakly with distance \cite{wong2015delays}, and transfer processes such as night-time arrival and acceptance-to-arrival delay have been associated with worse outcomes \cite{mueller2019transfer}.
+
+The organisational process is, in most regions, a telephone search. A coordinator at the sending hospital rings the nearest plausible receiver, describes the patient, waits for an answer, and on a refusal moves to the next hospital. Regional transfer centres and shared bed boards, expanded rapidly during the COVID-19 pandemic \cite{villarroel2023surgeline}, replace the telephone with a central dispatcher that reads every hospital's reported occupancy. A growing operations-research literature proposes optimisers that redistribute patients given full knowledge of each hospital's state \cite{dijkstra2023balancing,parker2020redistribution,mehrotra2020ventilator}.
+
+\subsection{Motivation}
+Both approaches share a weakness that neither can repair: they must take a hospital's word about its own capacity. Accepting a transfer costs the receiver a scarce bed for days and earns it little, so the cheapest response to an unwelcome request is ``sorry, we are full''. Evidence that capacity drives refusals is direct. In a study of 26,020 transfer requests, monthly acceptance at the receiving system was strongly and negatively correlated with its inpatient census ($r=-0.87$) and emergency-department boarding ($r=-0.73$) \cite{greenwood2025boarding}. Whether a particular refusal was true cannot be established from outside, by phone or by registry. Self-reported capacity data are also demonstrably unreliable. The facility-level capacity data U.S.\ hospitals reported to the Department of Health and Human Services were the subject of a federal review that called for external validation \cite{gao2021capacity}, and Section~\ref{sec:res-integrity} shows that 5.4\% of the weekly reports from the 27 Houston hospitals studied here are impossible or look copied.
+
+The motivation of \mahros{} is therefore threefold. The search must become \emph{parallel}, asking every capable hospital at once instead of one at a time. Occupancy must remain \emph{private}, because hospitals will not hand live operational state to a competitor or to a central store. And a refusal must become \emph{verifiable}: something a hospital can be held to, without the verifier ever seeing the hospital's beds, and without punishing a hospital whose refusal is true.
+
+\subsection{Scope of the Project}
+\mahros{} covers the design, formal modelling, implementation and empirical evaluation of a decentralised transfer-brokering system for patients who are \emph{already admitted}, within one metropolitan region. In scope are the following.
+\begin{itemize}
+\setlength{\itemsep}{1pt}
+\item A multi-agent architecture with hospital, resource, transfer-manager, verifier, data-integrity and regional-monitor agents.
+\item A Contract-Net negotiation protocol extended with a deliberation phase in which refusals are verified against public evidence and disputes are settled by grounded argumentation semantics.
+\item Signed (attested) refusals and random spot checks against coordinated refusal.
+\item A tamper-evident transfer ledger and a PostgreSQL backend with trigger-locked reference data and a hash-chained audit log.
+\item A browser console that streams every protocol step.
+\item A discrete-event simulator calibrated to 57 real hospitals in Houston and Phoenix.
+\item A pre-registered statistical evaluation against five baselines.
+\end{itemize}
+Out of scope are ambulance dispatch, emergency-department triage, repatriation and billing, integration with commercial bed-management systems, and live clinical deployment. Hospital behaviour, including whether a refusal is truthful, is simulated because no public dataset records it, and every behavioural parameter is swept.
+
+\subsection{Contributions}
+\begin{enumerate}
+\setlength{\itemsep}{1pt}
+\item \textbf{Verifiable refusals without disclosure.} A protocol that classifies each refusal as a public \emph{capability} claim or a private \emph{capacity} claim and verifies each against a different evidence base: the federal capability register, or the refuser's own ledger-recorded commitments. No message ever carries a bed count (Section~\ref{sec:verify}).
+\item \textbf{Evidence-gated argumentation.} A four-rule attack rulebook over Dung argumentation frameworks in which an attack is admitted only when a public record supports it, so a truthful hospital always wins its dispute (Section~\ref{sec:argumentation}).
+\item \textbf{Signed refusals and spot checks.} Ed25519-attested refusals of a minimal predicate, with the deterrence they produce treated as a swept parameter, and a random-audit defence against collusion (Sections~\ref{sec:attest}--\ref{sec:collusion}).
+\item \textbf{A full working system.} Multi-agent engine, FastAPI console, PostgreSQL backend with database-enforced integrity, Docker deployment and a 205-function test suite (Sections~\ref{sec:spec}--\ref{sec:models}).
+\item \textbf{A real-data evaluation methodology.} Per-pool Erlang-B calibration to two real metropolitan networks, cold-start validation, a data-integrity audit of the real reports, and paired tests with Holm correction and TOST equivalence (Section~\ref{sec:evaluation}).
+\end{enumerate}
+
+\subsection{Organisation}
+Section~\ref{sec:literature} reviews the literature. Section~\ref{sec:goals} states the research gaps, objectives, problem statement and project plan. Section~\ref{sec:spec} gives the technical specification, Section~\ref{sec:design} the design approach and formal model, and Section~\ref{sec:models} the design models (data-flow, use-case, class and sequence diagrams). Section~\ref{sec:evaluation} reports the evaluation, Section~\ref{sec:discussion} discusses implications and limitations, and Section~\ref{sec:conclusion} concludes.

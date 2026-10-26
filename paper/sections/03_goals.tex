@@ -1,0 +1,137 @@
+% =========================================================================
+\section{Research Gap, Objectives and Project Plan}
+\label{sec:goals}
+% =========================================================================
+
+\subsection{Research Gap}
+\label{sec:gap}
+The review reveals four gaps that current transfer-coordination approaches leave open.
+\begin{enumerate}
+\setlength{\itemsep}{2pt}
+\item \textbf{The disclosure dilemma.} Parallel, high-quality allocation is achieved today only by centralising every hospital's live occupancy in a registry or optimiser \cite{villarroel2023surgeline,dijkstra2023balancing,parker2020redistribution}. This creates a sensitive data monopoly, and it moves the incentive to misreport one layer down into the reported data instead of removing it. Decentralised negotiation keeps occupancy private but returns sealed refusals that cannot be checked \cite{smith1980contract}.
+\item \textbf{No evidence base for private claims.} Argumentation-based negotiation specifies how agents exchange justifications \cite{rahwan2003abn,amgoud2007unified}, but not what a justification about a private quantity, a hospital's free beds, can be checked against without disclosing that quantity. Reputation systems cannot fill the gap, because whether a refuser truly had a bed is never observed \cite{ramchurn2004trust}.
+\item \textbf{Misreporting is outside the evaluation.} Coordination studies evaluate allocation quality under truthful reporting, and negotiation studies use synthetic tasks. No transfer-brokering mechanism has been evaluated under parametrised strategic refusal on a real hospital network, with a control for the risk of wrongly accusing truthful but cautious hospitals.
+\item \textbf{No inspectable accountability layer.} Existing systems keep no tamper-evident record linking each award, refusal and challenge to the evidence used, so a regulator cannot audit why a patient went where they did, and a hospital cannot be held to what it said.
+\end{enumerate}
+
+\subsection{Objectives}
+\label{sec:objectives}
+\mahros{} is designed around seven measurable objectives. Each is verified in Section~\ref{sec:evaluation}.
+\begin{enumerate}
+\setlength{\itemsep}{2pt}
+\item[O1] \textbf{Parallel negotiation.} Decide each round within a single 2-minute bid window, and place at least 5 percentage points more patients within their clinical window than a perfect-information telephone search on the real Houston surge week.
+\item[O2] \textbf{Near-optimal efficiency without disclosure.} Achieve a success rate statistically equivalent, within a pre-declared $\pm2$-point margin (TOST, $\alpha=0.05$), to optimisers that read every hospital's true occupancy.
+\item[O3] \textbf{Verifiable refusals.} With half the hospitals refusing falsely, recover at least 50\% of the lost placements while wrongly overruling \emph{zero} truthful hospitals.
+\item[O4] \textbf{Privacy.} Transmit no occupancy count in any message, and ensure no node receives more than a small share of capacity-bearing messages (decision concentration far below the 1.0 of a central node).
+\item[O5] \textbf{Tamper evidence.} Lock all real reference data against application and owner edits. Record every change to live state and records in a hash-chained audit log in which any edited, inserted or deleted row is detected.
+\item[O6] \textbf{Realism.} Reproduce the occupancy that real hospitals reported, from an empty start, with a per-facility mean absolute error below 5 points in the reference week of both cities, the second without re-tuning.
+\item[O7] \textbf{Responsiveness.} Keep the 99th-percentile protocol decision time per transfer below 1\,s, so that computation never consumes clinical time.
+\end{enumerate}
+
+\subsection{Problem Statement}
+\begin{quote}
+\emph{To design, implement and empirically validate a decentralised multi-agent system that brokers inter-hospital escalation transfers. In this system each hospital's agent answers from private state, every refusal is verifiable against public evidence without disclosing occupancy, disputes are resolved by a formal and accountable rule, and every decision is recorded tamper-evidently. It is evaluated on real hospital networks against current practice and full-information optimisers.}
+\end{quote}
+
+Formally, let $\mathcal{H}$ be the hospitals and $\mathcal{R}=\{\textsc{ward},\textsc{hdu},\textsc{icu},\textsc{or},\textsc{vent},\textsc{cath}\}$ the bed-pool types. Hospital $h$ has capacity $c_{h,r}$ and private occupancy $x_{h,r}(t)$. A request $q=(o_q,r_q,s_q,a_q,t_q,\ell_q)$ carries origin, pool, specialty, acuity $a_q\in\{1,\dots,5\}$, creation time and expected stay. Its clinical window $W(a_q)$ (720, 480, 240, 150 and 90\,min for acuity 1--5) sets the deadline $d_q=t_q+W(a_q)$. Assigning $q$ at time $t$ to $h$ starts care at $T_q(h)=t+\tau_{o_q,h}+p_h(q)$, the sum of road time including handover and receiver preparation. The objective is lexicographic:
+\begin{align}
+  \text{(i)}\;\; & \max \textstyle\sum_{q} \mathbf{1}[T_q(h_q) \le d_q], \label{eq:obj1}\\
+  \text{(ii)}\;\; & \min \textstyle\sum_{q} (T_q(h_q) - t_q), \label{eq:obj2}\\
+  \text{(iii)}\;\; & \min G(\{b_h/\sigma_h\}_{h\in\mathcal{H}}), \label{eq:obj3}
+\end{align}
+where $b_h$ counts acceptances by $h$, $\sigma_h$ is its share of network capacity and $G$ is the Gini coefficient. These are subject to capability and capacity feasibility, a \emph{privacy} constraint (no message contains $x_{h,r}$) and a \emph{self-interest} condition (a hospital may report a refusal its state does not support).
+
+\subsection{Project Plan}
+\label{sec:plan}
+\subsubsection{Work Breakdown Structure}
+The implementation was organised into six work packages (WPs).
+\begin{itemize}
+\setlength{\itemsep}{1pt}
+\item \textbf{WP1: Core engine.} Resource and hospital agents, Contract-Net protocol, message bus, discrete-event simulator, live console.
+\item \textbf{WP2: Deliberation and evaluation tooling.} Argumentation layer, challenge engine, HHS calibration, paired-test and TOST statistics.
+\item \textbf{WP3: Deployment.} Docker packaging, deployment configuration and seed data.
+\item \textbf{WP4: Database.} PostgreSQL schema as the source of truth, trigger locks, hash-chained audit log and the Hospital-data tab.
+\item \textbf{WP5: Real-data evaluation.} Warm start, California case-mix, cold-start validation, Phoenix region, data-integrity audit, registry, collusion and reputation experiments.
+\item \textbf{WP6: Hardening and reporting.} Reproducibility fixes, indexed ledger queries, generated results document and this paper.
+\end{itemize}
+
+\subsubsection{Project Schedule}
+Figure~\ref{fig:gantt} shows the schedule, derived from the repository's commit history (first to last commit of each package, rounded to whole weeks, weeks starting Monday 10 August 2026).
+
+\begin{figure*}[!t]
+\centering
+\begin{tikzpicture}[font=\scriptsize, x=1.12cm, y=0.62cm]
+% grid
+\foreach \w in {1,...,11} {
+  \draw[gray!25] (\w,0.45) -- (\w,-5.5);
+  \node[font=\tiny, gray!70!black] at (\w+0.5,0.75) {W\w};
+}
+\draw[gray!25] (12,0.45) -- (12,-5.5);
+\node[font=\tiny, gray] at (1.5,1.25) {10 Aug}; \node[font=\tiny, gray] at (5.5,1.25) {7 Sep}; \node[font=\tiny, gray] at (9.5,1.25) {5 Oct}; \node[font=\tiny, gray] at (11.5,1.25) {19 Oct};
+% tasks
+\def\ganttbar#1#2#3#4#5{%
+  \node[anchor=east, font=\scriptsize] at (0.92,#1) {#2};
+  \fill[#5, rounded corners=1pt] (#3,#1-0.3) rectangle (#4,#1+0.3);
+}
+\ganttbar{0}{WP1 Core engine \& console}{1}{2}{cM}
+\ganttbar{-1}{WP2 Argumentation, calibration, statistics}{2}{4}{cM}
+\ganttbar{-2}{WP3 Deployment \& seed data}{4}{6}{cM!60}
+\ganttbar{-3}{WP4 PostgreSQL, audit chain, data tab}{9}{11}{cR}
+\ganttbar{-4}{WP5 Real-data evaluation \& replication}{10}{11}{cG}
+\ganttbar{-5}{WP6 Hardening, results, paper}{10}{12}{cP!80}
+% milestones
+\foreach \x/\y/\l in {2/0/M1, 4/-1/M2, 6/-2/M3, 11/-3/M4, 11/-4/M5, 12/-5/M6} {
+  \fill[black] (\x,\y) ++(0,0.42) -- ++(0.09,-0.14) -- ++(-0.09,-0.14) -- ++(-0.09,0.14) -- cycle;
+  \node[font=\tiny, anchor=west] at (\x+0.08,\y+0.42) {\l};
+}
+\end{tikzpicture}
+\caption{Project schedule (11 weeks, 10 August to 25 October 2026) derived from the commit history; diamonds mark milestones M1--M6 (Table~\ref{tab:milestones}). Weeks 6--8 contain no commits.}
+\label{fig:gantt}
+\end{figure*}
+
+\subsubsection{Milestones and Verification Gates}
+Each milestone was accepted against a verification gate expressed as passing tests or a generated result (Table~\ref{tab:milestones}).
+
+\begin{table}[!t]
+\centering
+\caption{Milestones and Verification Gates}
+\label{tab:milestones}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{0.45cm}p{1.9cm}p{0.95cm}p{4.0cm}@{}}
+\toprule
+ID & Milestone & Date & Verification gate \\
+\midrule
+M1 & Protocol prototype & 15--16 Aug & Contract Net places patients; live console streams every step; same seed gives same result \\
+M2 & Deliberation layer & 27 Aug & Grounded labelling passes textbook cases (reinstatement, even cycle); honest hospitals never overruled \\
+M3 & Deployable system & 3--9 Sep & Docker stack starts in one command; dashboard test count matches suite \\
+M4 & Database of record & 13 Oct & App cannot change capacity; owner cannot change real data; edited or deleted audit row breaks the chain \\
+M5 & Real-data evaluation & 13--14 Oct & Cold-start occupancy error below 5 pts; Phoenix replicates with unchanged code \\
+M6 & Final results & 15--20 Oct & All results regenerated from JSON; risk-based checks reported as negative \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Risk Management}
+Table~\ref{tab:risks} lists the principal project risks and the mitigations that were actually implemented.
+
+\begin{table}[!t]
+\centering
+\caption{Risk Identification and Mitigation Matrix}
+\label{tab:risks}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{0.4cm}p{2.2cm}p{0.85cm}p{3.75cm}@{}}
+\toprule
+ID & Risk & Severity & Implemented mitigation \\
+\midrule
+R1 & Results depend on simulated behaviour & High & Every behavioural parameter swept; truthful-but-cautious control arm; ranges reported \\
+R2 & Simulated hospitals unlike real ones & High & Per-pool Erlang-B fit to HHS data; cold-start validation; untuned second city \\
+R3 & Non-reproducible runs & High & SHA-256-seeded random streams; fresh-process reproducibility test (two defects found and fixed) \\
+R4 & Truthful hospitals wrongly penalised & Critical & Two-predicate attestation; spot checks restricted to capacity claims; safety tests \\
+R5 & Collusion defeats reactive checks & High & Uniform random spot checks; cartel experiments \\
+R6 & Tampering with records & High & Trigger locks, column grants, hash-chained audit log, checkpoints \\
+R7 & Deliberation cost grows with run length & Medium & Indexed ledger queries (5$\times$ faster audit, identical output) \\
+\bottomrule
+\end{tabular}
+\end{table}

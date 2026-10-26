@@ -118,6 +118,8 @@ class HashChainLedger(LedgerBackend):
         #: making deliberation quadratic in the length of the run.
         self._by_receiver: dict[str, list[dict[str, Any]]] = {}
         self._by_refuser: dict[str, list[dict[str, Any]]] = {}
+        #: Agreements the receiver gave back: agreement id -> the cancellation.
+        self._cancelled: dict[str, dict[str, Any]] = {}
         self._record_count = 0
         self._latencies: list[float] = []
         genesis = Block(index=0, timestamp=0.0, prev_hash="0" * 64)
@@ -196,6 +198,36 @@ class HashChainLedger(LedgerBackend):
         if len(self._pending) >= self.block_size:
             self._seal_pending()
 
+    def record_cancellation(self, agreement_id: str, hospital: str, reason: str,
+                            at: float) -> None:
+        """The receiver gave an agreed bed back: broken equipment, no staff, no answer.
+
+        The agreement stays on the record -- nothing is ever removed -- but it
+        is no longer proof that the hospital *had* a bed to give. It is still
+        a reason to ask: a hospital could accept a patient and give it back
+        just to wipe the evidence against a later "we're full". So a given-back
+        acceptance makes a later refusal answer a challenge (see
+        `ChallengeEngine`), worded truthfully; an honest hospital defends it.
+        """
+        entry = {
+            "kind": "cancellation",
+            "agreement_id": agreement_id,
+            "hospital": hospital,
+            "reason": reason,
+            "agreed_at": round(at, 4),
+        }
+        self._pending.append(entry)
+        self._cancelled[agreement_id] = entry
+        self._record_count += 1
+        if len(self._pending) >= self.block_size:
+            self._seal_pending()
+
+    def _live(self, entries) -> list[dict[str, Any]]:
+        """Acceptances that still stand (not given back)."""
+        if not self._cancelled:
+            return list(entries)
+        return [e for e in entries if e.get("agreement_id") not in self._cancelled]
+
     def refusals_by(
         self, hospital: str, since: float | None = None, resource: str | None = None
     ) -> list[dict[str, Any]]:
@@ -219,7 +251,7 @@ class HashChainLedger(LedgerBackend):
         neither reveals private state, and no third party had to be trusted.
         """
         refusals = self.refusals_by(hospital, since=since)
-        accepts = sorted(self._by_receiver.get(hospital, ()),
+        accepts = sorted(self._live(self._by_receiver.get(hospital, ())),
                          key=lambda e: e.get("agreed_at", 0.0))
         times = [e.get("agreed_at", 0.0) for e in accepts]
         pairs = []
@@ -264,12 +296,15 @@ class HashChainLedger(LedgerBackend):
         self._pending = []
         self._by_receiver = {}
         self._by_refuser = {}
+        self._cancelled = {}
         self._record_count = 0
         for block in self.chain[1:]:
             for entry in block.entries:
                 self._record_count += 1
                 if entry.get("kind") == "refusal":
                     self._by_refuser.setdefault(entry["hospital"], []).append(entry)
+                elif entry.get("kind") == "cancellation":
+                    self._cancelled[entry["agreement_id"]] = entry
                 elif "receiver" in entry:
                     self._by_receiver.setdefault(entry["receiver"], []).append(entry)
 
@@ -315,17 +350,37 @@ class HashChainLedger(LedgerBackend):
         since: float | None = None,
         resource: str | None = None,
         specialty: str | None = None,
+        include_cancelled: bool = False,
     ) -> list[dict[str, Any]]:
         """Agreements where `hospital` was the *receiver*, newest first.
 
         This is the read side of the audit ledger, and the reason the ledger is
         load-bearing rather than decorative: it is what a challenge is made of.
+        Agreements given back are left out unless `include_cancelled`: they do
+        not show a bed was free, but they do show what the hospital can treat.
         """
+        source = self._by_receiver.get(hospital, ())
         rows = [
-            e for e in self._by_receiver.get(hospital, ())
+            e for e in (source if include_cancelled else self._live(source))
             if (since is None or e.get("agreed_at", 0.0) >= since)
             and (resource is None or e.get("resource") == resource)
             and (specialty is None or e.get("specialty") == specialty)
+        ]
+        rows.sort(key=lambda e: e.get("agreed_at", 0.0), reverse=True)
+        return rows
+
+    def given_back_by(self, hospital: str, since: float | None = None,
+                      resource: str | None = None) -> list[dict[str, Any]]:
+        """Agreements this hospital accepted and then gave back, newest first.
+
+        Each row is the agreement plus `given_back_reason`.
+        """
+        rows = [
+            {**e, "given_back_reason": self._cancelled[e.get("agreement_id")]["reason"]}
+            for e in self._by_receiver.get(hospital, ())
+            if e.get("agreement_id") in self._cancelled
+            and (since is None or e.get("agreed_at", 0.0) >= since)
+            and (resource is None or e.get("resource") == resource)
         ]
         rows.sort(key=lambda e: e.get("agreed_at", 0.0), reverse=True)
         return rows
@@ -343,7 +398,8 @@ class HashChainLedger(LedgerBackend):
         lo = bisect.bisect_right(rows, start, key=key)
         hi = bisect.bisect_right(rows, end, key=key)
         return [e for e in rows[lo:hi]
-                if resource is None or e.get("resource") == resource]
+                if (resource is None or e.get("resource") == resource)
+                and e.get("agreement_id") not in self._cancelled]
 
     def stats(self) -> dict[str, Any]:
         self.flush()
@@ -381,11 +437,20 @@ class NullLedger(LedgerBackend):
 
     def accepted_by(self, hospital: str, since: float | None = None,
                     resource: str | None = None,
-                    specialty: str | None = None) -> list[dict[str, Any]]:
+                    specialty: str | None = None,
+                    include_cancelled: bool = False) -> list[dict[str, Any]]:
+        return []
+
+    def given_back_by(self, hospital: str, since: float | None = None,
+                      resource: str | None = None) -> list[dict[str, Any]]:
         return []
 
     def record_refusal(self, hospital: str, resource: str, request_id: str,
                        reason: str, at: float) -> None:
+        return None
+
+    def record_cancellation(self, agreement_id: str, hospital: str, reason: str,
+                            at: float) -> None:
         return None
 
     def refusals_by(self, hospital: str, since: float | None = None,

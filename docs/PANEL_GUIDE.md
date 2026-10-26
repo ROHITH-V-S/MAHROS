@@ -141,6 +141,23 @@ in time, then minimise time to care, then balance load, under capacity,
 capability and privacy constraints. Each award is a scored choice, and we
 compare against the minimum-cost assignment (Hungarian) as the ceiling.
 
+**"Methodist was caught. Why did the patient go somewhere else?"**
+Being caught strikes out the false refusal and puts Methodist's real bid back
+into the competition; the catch is counted against it. Another hospital still
+scored better on time to care, so it won. MAHROS does not force a patient on
+a hospital as punishment; it stops a lie from removing a real option.
+
+**"What if the liar hasn't accepted anyone recently?"**
+Then there is no contradiction on the record and the lie gets through. We
+say so. That gap, and collusion, are what random spot checks cover (15% spot
+checks bring a cartel of 6 back from 79.2% to 90.8%).
+
+**"Did you set up the demo so it works?"**
+Yes, and say how: the demo puts the network in the one state where a lie is
+possible (Methodist has free beds) and checkable (it accepted a patient a
+minute ago). The live demo shows the mechanism; the numbers come from
+the seeded experiment runs in RESULTS.md, not from the demo.
+
 **"Show me it from the backend."**
 Open pgAdmin. Run a transfer; open `agent_decisions`, `challenges`,
 `allocations`, `audit_log`. Then let them edit any audit row and press

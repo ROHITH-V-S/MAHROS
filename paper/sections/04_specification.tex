@@ -1,0 +1,146 @@
+% =========================================================================
+\section{Technical Specification}
+\label{sec:spec}
+% =========================================================================
+
+\subsection{Functional Requirements}
+The requirements are organised by pipeline stage. Each is implemented and covered by the test suite.
+
+\textbf{Stage 1: Network and data ingestion (FR-1).}
+FR-1.1: build each study network from the HHS facility reports \cite{hhs_capacity_dataset} for a chosen week: staffed inpatient beds, occupied beds, staffed adult ICU beds and occupied ICU beds, keyed by CMS Certification Number (CCN).
+FR-1.2: join capability (cardiac, neurological, trauma, obstetric, burns, catheterisation-room count) from the CMS Provider of Services file \cite{cms_pos} on CCN.
+FR-1.3: load pairwise OSRM road times \cite{luxen2011osrm} and add a handover allowance.
+FR-1.4: label every simulator input as observed, derived or assumed, and generate the provenance report from code.
+
+\textbf{Stage 2: Agent assessment (FR-2).}
+FR-2.1: each resource agent assesses a request from its own pool state and returns feasibility, preparation time, capability match $\kappa\in[0,1]$, post-acceptance strain and a private opportunity cost.
+FR-2.2: a hospital's bidding policy decides what to report. The truthful assessment is retained privately for defence.
+FR-2.3: the hospital's self-protection reserve is relaxed for acuity 3 and released entirely for acuity $\ge4$.
+
+\textbf{Stage 3: Negotiation (FR-3).}
+FR-3.1: announce an anonymised call for proposals (pseudonymous patient token, resource, specialty, acuity, deadline, expected stay) to the eight nearest peers by road time, and to sixteen in a second round.
+FR-3.2: collect all bids in one parallel 2-minute window.
+FR-3.3: reserve the winner's unit for 45\,min, and re-award to the runner-up if the reservation race is lost.
+FR-3.4: retry failed requests every 20\,min while the deadline allows.
+
+\textbf{Stage 4: Verification and deliberation (FR-4).}
+FR-4.1: append every capacity refusal to the ledger before examining it.
+FR-4.2: challenge a capability refusal that the public register contradicts.
+FR-4.3: challenge a capacity refusal when the refuser accepted the same resource within 60\,min, or has a recent refusal-then-acceptance history.
+FR-4.4: let the challenged hospital defend or sign, or have its refusal struck out by grounded labelling, and hold it to its truthful bid.
+FR-4.5: spot-check a configurable fraction of uncontradicted capacity refusals.
+FR-4.6: never compel a hospital beyond its real capacity.
+
+\textbf{Stage 5: Award and fairness (FR-5).}
+FR-5.1: discard bids that cannot meet the deadline before scoring.
+FR-5.2: score surviving bids on time to care, capability, strain and fairness credit, collapsing towards speed for acuity $\ge4$.
+FR-5.3: allow a burden objection only for acuity $\le3$ and only when a comparable alternative exists.
+FR-5.4: attach a plain-English rationale to every award.
+
+\textbf{Stage 6: Recording and audit (FR-6).}
+FR-6.1: append each agreement, with the hash of its canonical terms, to a Merkle-linked ledger block.
+FR-6.2: persist each negotiation (request, every agent decision, challenges, allocation, ledger block) in one database transaction.
+FR-6.3: audit every insert, update and delete with before and after values and actor.
+FR-6.4: provide chain verification and checkpointing.
+
+\textbf{Stage 7: Monitoring and interaction (FR-7).}
+FR-7.1: stream every protocol step to the console over WebSocket.
+FR-7.2: let a reviewer edit occupancy and hospital behaviour, then restore the reported data.
+FR-7.3: flag impossible or copied weekly reports (Data Integrity agent).
+FR-7.4: report unmet needs and the fullest pools (Regional Monitor).
+
+\subsection{Non-Functional Requirements}
+Table~\ref{tab:nfr} lists the quantitative non-functional requirements and how each is verified.
+
+\begin{table}[!t]
+\centering
+\caption{Quantitative Non-Functional Requirements and Verification}
+\label{tab:nfr}
+\scriptsize
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular}{@{}p{0.8cm}p{1.55cm}p{2.5cm}p{2.5cm}@{}}
+\toprule
+ID & Category & Requirement & Verification \\
+\midrule
+NFR-1 & Latency & p99 decision time $<1$\,s per transfer & \texttt{realtime.py} timing of every transfer \\
+NFR-2 & Throughput & one bid window per round, independent of peer count & protocol design; message bus log \\
+NFR-3 & Privacy & no occupancy value in any message; no global view & bus audit; leakage model; tests \\
+NFR-4 & Safety & zero false accusations of truthful hospitals & cautious-hospital control arms; tests \\
+NFR-5 & Integrity & real data immutable; any audit-row edit detected & database tests as owner and app role \\
+NFR-6 & Atomicity & a negotiation is fully persisted or not at all & single-transaction write; smoke test \\
+NFR-7 & Reproducibility & identical results for (scenario, seed) in any process & fresh-process test \\
+NFR-8 & Realism & cold-start occupancy MAE $<5$\,pts & cold-start validation script \\
+NFR-9 & Portability & core runs on the Python standard library & dependency-free install; CI-style test run \\
+NFR-10 & Determinism & award never delegated to a language model & LLM off by default; ablation flag \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Assumptions and Constraints}
+\textbf{Assumptions.} (A1) Each hospital's capability (specialties, catheterisation rooms) is public and accurately listed in the CMS register. (A2) Agreements are recorded on a ledger that no single hospital can rewrite. (A3) Hospitals may misreport their own capacity but cannot forge other hospitals' ledger entries or the independent co-signature. (A4) Road time plus a fixed handover allowance is common knowledge.
+
+\textbf{Constraints.} (C1) No message may contain a hospital's occupancy count. (C2) A patient may be assigned only to a hospital that can treat them, has a unit free above its reserve, and can begin care before the deadline. (C3) Fairness may reorder clinically comparable options but may never delay a critically ill patient. (C4) No decision may depend on a non-deterministic component; the language model, if enabled, only explains.
+
+\subsection{Feasibility Study}
+\subsubsection{Technical feasibility}
+The protocol's computational load is small. A negotiation evaluates at most sixteen peers, builds an argumentation framework of a few dozen arguments, and computes its grounded labelling by fixed-point iteration in time polynomial in the number of arguments \cite{modgil2009algorithms}. Ed25519 signing and verification take about 0.43\,ms and 0.86\,ms per operation \cite{bernstein2012ed25519}. Ledger lookups are indexed by receiver, refuser and time. The measured median decision time is 3.55\,ms with ledger-backed challenge and 13.9\,ms in the adversarial setting (Section~\ref{sec:res-latency}), several orders of magnitude below the 90-minute shortest clinical window. A full 14-day simulation of 27 hospitals runs on a laptop.
+
+\subsubsection{Data feasibility}
+Every input that decides \emph{who can take a patient} is public. Beds, ICU beds and weekly occupancy come from HHS \cite{hhs_capacity_dataset}, capability and catheterisation rooms from CMS \cite{cms_pos}, roads from OpenStreetMap through OSRM \cite{luxen2011osrm}, and case-mix from California HCAI \cite{hcai_transfers}. All are public domain or openly licensed and are vendored in the repository, so the system runs offline. For Houston, 8 inputs are observed, 4 derived and 6 assumed (Table~\ref{tab:prov}).
+
+\subsubsection{Economic and operational feasibility}
+All software is open source: Python, FastAPI, PostgreSQL, pgAdmin and Docker. The system runs on commodity hardware with no licence or cloud cost. Operationally, \mahros{} reduces coordinator time per transfer from 50.3\,min (telephone search) to 1.1\,min (Section~\ref{sec:res-honest}). A deployment would integrate with each hospital's existing bed-management system instead of replacing it.
+
+\subsubsection{Social, legal and ethical feasibility}
+No patient-identifiable data are processed. Patients are referenced only by HMAC-SHA256 pseudonyms, and announcements carry clinical need but no demographic attributes. Hospitals never disclose occupancy, which removes the main commercial obstacle to regional data sharing. The accountability \mahros{} adds mirrors an obligation regulators already recognise for emergency patients \cite{emtala489}.
+
+\subsection{System Specification}
+\subsubsection{Hardware}
+\mahros{} has no special hardware requirements. Table~\ref{tab:hw} gives the host on which the Docker deployment and live console were run for this paper.
+
+\begin{table}[!t]
+\centering
+\caption{Development and Deployment Host}
+\label{tab:hw}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{2.0cm}p{5.6cm}@{}}
+\toprule
+Component & Specification \\
+\midrule
+Processor & Intel Core i5-13420H (8 cores, 12 threads) \\
+Memory & 16 GB (15.6 GB usable) \\
+Operating system & Windows 11; Docker Desktop with Linux containers \\
+GPU & Not required \\
+Network & Not required at run time (data vendored) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Software stack}
+Table~\ref{tab:sw} lists the software stack, with versions read from the running deployment.
+
+\begin{table}[!t]
+\centering
+\caption{Software Stack (Versions from the Running Deployment)}
+\label{tab:sw}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{1.85cm}p{1.95cm}p{3.7cm}@{}}
+\toprule
+Layer & Component & Version / configuration \\
+\midrule
+Runtime & CPython & 3.13.17 (\texttt{python:3.13-slim}); core uses stdlib only \\
+Web API & FastAPI / Starlette & 0.162.0 / 1.9.0, served by Uvicorn 0.54.0 \\
+Live channel & WebSocket & protocol events streamed per step \\
+Database & PostgreSQL & 16.15 (\texttt{postgres:16-alpine}) \\
+DB driver & psycopg & 3.3.6 (binary) \\
+Signatures & cryptography & 50.0.2, Ed25519; HMAC-SHA256 fallback \\
+Admin UI & pgAdmin 4 & 8.14 \\
+Orchestration & Docker / Compose & 29.3.1 / v5.1.1, three services \\
+Analysis & stdlib statistics & paired $t$, TOST, Holm, bootstrap \\
+Testing & pytest & 205 test functions; DB tests with live Postgres \\
+Optional & Ollama / hosted LLM & explanations only; off by default \\
+\bottomrule
+\end{tabular}
+\end{table}

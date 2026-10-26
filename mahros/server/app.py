@@ -21,6 +21,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -29,7 +31,7 @@ from pydantic import BaseModel
 
 from ..hospital.behaviours import POLICIES
 from ..sim.scenario import SCENARIOS
-from .live import LiveNetwork
+from .live import GIVE_BACK_MINUTES, LiveNetwork
 
 try:  # psycopg is only needed when a database is configured
     from ..db.live_sync import DatabaseSync
@@ -46,7 +48,15 @@ except ImportError:  # pragma: no cover - in-memory deployments
 
 STATIC = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="MAHROS live demo", docs_url="/api/docs")
+@asynccontextmanager
+async def lifespan(_app):
+    # Pass on held beds nobody answered in time (see confirmation_watch).
+    watch = asyncio.create_task(confirmation_watch())
+    yield
+    watch.cancel()
+
+
+app = FastAPI(title="MAHROS live demo", docs_url="/api/docs", lifespan=lifespan)
 
 #: The live network always runs on the real Houston network in its reference
 #: week -- the same week the database's default data comes from.
@@ -437,6 +447,163 @@ async def network_load(body: LoadBody, request: Request):
     return {"ok": True, "level": body.level}
 
 
+class DeclineBody(BaseModel):
+    reason: str
+    actor: str | None = None
+
+
+@app.get("/api/inbox/{hospital_id}")
+def inbox(hospital_id: str):
+    """The receiving hospital's view: beds it is holding, awaiting its confirmation."""
+    if (r := need_db()) is not None:
+        return r
+    box = STORE.inbox(hospital_id)
+    for w in box["waiting"]:
+        # Seconds until this bed is passed on, when the time limit covers it.
+        w["timeout_in"] = None
+        if (CONFIRM["timeout_on"] and CONFIRM["since"] is not None
+                and w["awarded_at"] >= CONFIRM["since"]
+                and STORE.reoffer_chain(w["request_id"])["hops"] < MAX_AUTO_HOPS):
+            w["timeout_in"] = max(0.0, CONFIRM["seconds"] - float(w["waiting_seconds"]))
+    # This hospital's record: beds awarded and given back this session, and
+    # the ranking penalty that follows from it.
+    rel = NET.reliability
+    box["reliability"] = {"awarded": rel.awarded.get(hospital_id, 0),
+                          "given_back": rel.given_back.get(hospital_id, 0),
+                          "rate": round(rel.rate(hospital_id), 3),
+                          "penalty": round(NET.negotiator.weights.w_reliability
+                                           * rel.rate(hospital_id), 3)}
+    box["give_back_minutes"] = GIVE_BACK_MINUTES
+    return to_jsonable(box)
+
+
+@app.post("/api/inbox/{request_id}/confirm")
+async def confirm_bed(request_id: str, body: ActorBody, request: Request):
+    if (r := need_db()) is not None:
+        return r
+    try:
+        out = STORE.confirm_bed(who(request, body.actor), request_id)
+    except DataError as exc:
+        return err(str(exc))
+    await hub.send_all({"type": "inbox"})
+    return to_jsonable(out)
+
+
+#: Bed confirmation time limit. Off by default: when on, a bed held after it
+#: was switched on and not answered within `seconds` is passed on to the next
+#: hospital automatically. Wall-clock seconds, scaled for a live demo.
+CONFIRM = {"timeout_on": False, "seconds": 30, "since": None}
+#: A patient is passed on automatically at most this many times in a row;
+#: after that nobody is answering, and a person has to pick up the phone.
+MAX_AUTO_HOPS = 3
+
+
+class DeclineFailed(RuntimeError):
+    pass
+
+
+async def decline_and_reoffer(request_id: str, reason: str, actor: str) -> dict:
+    """Free the held bed, record why, and offer the patient to the others."""
+    chain = STORE.reoffer_chain(request_id)
+    held = STORE.decline_bed(actor, request_id, reason)          # DataError if decided
+    try:
+        result = run_transfer(lambda: NET.reoffer(held, actor=actor, reason=reason,
+                                                  also_exclude=chain["declined"]))
+    except (KeyError, ValueError, TransferNotSaved) as exc:
+        await hub.send_all({"type": "inbox"})
+        raise DeclineFailed(
+            f"The bed was released, but re-offering the patient failed: {exc}") from exc
+    new_id = result["request"]["request_id"]
+    receiver = result["agreement"]["receiver"] if result["awarded"] else None
+    STORE.record_reoffer(actor, new_id, request_id, receiver)
+    context = {"previous_request_id": request_id, "declined_by": held["receiver_id"],
+               "declined_by_name": NET.hospitals[held["receiver_id"]].name
+               if held["receiver_id"] in NET.hospitals else held["receiver_id"],
+               "reason": reason, "runner_up": chain["runner_up"],
+               "hop": chain["hops"] + 1,
+               "cost_minutes": GIVE_BACK_MINUTES.get(reason, GIVE_BACK_MINUTES["other"])}
+    result["reoffer_of"] = context
+    # Play the re-offer in every open Live tab, without holding up this reply.
+    asyncio.create_task(stream_negotiation(result, 300))
+    await hub.send_all({"type": "inbox"})
+    return {
+        "declined": {"request_id": request_id, "hospital_id": held["receiver_id"],
+                     "reason": reason},
+        "reoffer": {"request_id": new_id, "awarded": result["awarded"],
+                    "receiver": receiver,
+                    "receiver_name": (result["agreement"]["receiver_name"]
+                                      if result["awarded"] else None),
+                    "time_to_care": (result["agreement"].get("time_to_care")
+                                     if result["awarded"] else None),
+                    "minutes_left": result["request"]["window_min"],
+                    "runner_up": chain["runner_up"],
+                    "cost_minutes": context["cost_minutes"],
+                    "failure_reason": result.get("failure_reason")},
+    }
+
+
+@app.post("/api/inbox/{request_id}/decline")
+async def decline_bed(request_id: str, body: DeclineBody, request: Request):
+    """Free the held bed, record why, and re-offer the patient to the others."""
+    if (r := need_db()) is not None:
+        return r
+    try:
+        out = await decline_and_reoffer(request_id, body.reason, who(request, body.actor))
+    except DataError as exc:
+        return err(str(exc))
+    except DeclineFailed as exc:
+        return err(str(exc), 500)
+    return to_jsonable(out)
+
+
+class TimeoutBody(BaseModel):
+    on: bool
+    actor: str | None = None
+
+
+@app.get("/api/inbox-settings")
+def inbox_settings():
+    return {"timeout_on": CONFIRM["timeout_on"], "seconds": CONFIRM["seconds"],
+            "max_auto_hops": MAX_AUTO_HOPS}
+
+
+@app.post("/api/inbox-settings")
+async def set_inbox_settings(body: TimeoutBody, request: Request):
+    """Switch the confirmation time limit on or off. Applies to beds held from now."""
+    CONFIRM["timeout_on"] = body.on
+    CONFIRM["since"] = None
+    if body.on:
+        CONFIRM["since"] = datetime.now(timezone.utc)
+        if STORE is not None:       # the database's clock stamps the held beds
+            with STORE.tx() as cur:
+                cur.execute("SELECT now() AS n")
+                CONFIRM["since"] = cur.fetchone()["n"]
+    if STORE is not None:
+        STORE.audit_action(who(request, body.actor), "CONFIRM_TIMEOUT",
+                           {"on": body.on, "seconds": CONFIRM["seconds"]})
+    await hub.send_all({"type": "inbox"})
+    return inbox_settings()
+
+
+async def confirmation_watch() -> None:
+    """Pass on beds nobody answered in time. Runs for the life of the server."""
+    while True:
+        await asyncio.sleep(2)
+        if not CONFIRM["timeout_on"] or STORE is None or not NET.db_mode:
+            continue
+        try:
+            late = STORE.unanswered(CONFIRM["seconds"], CONFIRM["since"])
+            for rid in late:
+                if STORE.reoffer_chain(rid)["hops"] >= MAX_AUTO_HOPS:
+                    continue      # left waiting: a coordinator has to step in
+                try:
+                    await decline_and_reoffer(rid, "no_response", "system:confirm-timeout")
+                except DataError:
+                    pass          # answered at the last moment; nothing to do
+        except Exception:  # noqa: BLE001 - keep watching; the next pass retries
+            pass
+
+
 @app.get("/api/hospitals/{hospital_id}/history")
 def hospital_history(hospital_id: str, limit: int = 100):
     if (r := need_db()) is not None:
@@ -552,14 +719,25 @@ async def broadcast_state() -> None:
     await hub.send_all({"type": "state", "state": NET.state()})
 
 
+#: One negotiation on screen at a time: a re-offer started by a timeout waits
+#: for the one already playing instead of interleaving with it.
+STREAM_LOCK = asyncio.Lock()
+
+
 async def stream_negotiation(result: dict, pace_ms: int) -> None:
+    async with STREAM_LOCK:
+        await _stream_negotiation(result, pace_ms)
+
+
+async def _stream_negotiation(result: dict, pace_ms: int) -> None:
     """Replay a completed negotiation step by step, paced for a human."""
     pace = max(0, min(pace_ms, 3000)) / 1000.0
 
     await hub.send_all({"type": "busy", "busy": True})
     await hub.send_all({"type": "negotiation_start",
                         "request": result["request"],
-                        "privacy": result["privacy"]})
+                        "privacy": result["privacy"],
+                        "reoffer_of": result.get("reoffer_of")})
     await asyncio.sleep(pace)
 
     for step in result["steps"]:
@@ -577,7 +755,8 @@ async def stream_negotiation(result: dict, pace_ms: int) -> None:
     if result["awarded"]:
         await hub.send_all({"type": "agreement", **result["agreement"],
                             "request_id": result["request"]["request_id"],
-                            "saved": result.get("db")})
+                            "saved": result.get("db"),
+                            "reoffer_of": result.get("reoffer_of")})
     else:
         await hub.send_all({"type": "failed",
                             "request_id": result["request"]["request_id"],

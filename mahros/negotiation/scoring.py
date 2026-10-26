@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.types import Acuity, Bid, TransferRequest
-from ..fairness.metrics import FairnessLedger
+from ..fairness.metrics import FairnessLedger, ReliabilityLedger
 
 
 @dataclass
@@ -24,6 +24,12 @@ class ScoringWeights:
     w_strain: float = 0.15        # prefer the peer who stays comfortable after accepting
     w_fairness: float = 0.15      # burden balancing
     fairness_enabled: bool = True
+    #: Penalty per unit of give-back rate (beds awarded, then declined or not
+    #: answered). Applied outside the weighted sum, so a hospital that never
+    #: gives a bed back scores exactly as before. Same weight as fairness:
+    #: one give-back in the first few awards (rate 1/3) costs 0.05, enough
+    #: to decide a close call, never enough to beat a much faster hospital.
+    w_reliability: float = 0.15
 
     def normalised(self) -> "ScoringWeights":
         if not self.fairness_enabled:
@@ -34,6 +40,7 @@ class ScoringWeights:
                 w_strain=self.w_strain / total,
                 w_fairness=0.0,
                 fairness_enabled=False,
+                w_reliability=self.w_reliability,
             )
         return self
 
@@ -47,6 +54,7 @@ class ScoredBid:
     strain_term: float
     fairness_term: float
     slack_minutes: float          # how much of the safe window is left on arrival
+    reliability_term: float = 0.0  # minus the give-back penalty (0 = never gave one back)
 
 
 def score_bids(
@@ -55,6 +63,7 @@ def score_bids(
     now: float,
     weights: ScoringWeights,
     fairness: FairnessLedger | None = None,
+    reliability: ReliabilityLedger | None = None,
 ) -> list[ScoredBid]:
     """Score all feasible bids, best first.
 
@@ -107,6 +116,14 @@ def score_bids(
             score = 0.75 * (w.w_time * time_term + w.w_capability * capability_term) \
                     / max(w.w_time + w.w_capability, 1e-6) + 0.25 * score
 
+        # Reliability is applied after that blend, at full weight, even for the
+        # sickest patients: unlike fairness, a bed given back costs *this*
+        # patient time, so it is a clinical concern, not an equity one.
+        reliability_term = 0.0
+        if reliability is not None:
+            reliability_term = -w.w_reliability * reliability.rate(b.bidder)
+            score += reliability_term
+
         scored.append(
             ScoredBid(
                 bid=b,
@@ -116,6 +133,7 @@ def score_bids(
                 strain_term=strain_term,
                 fairness_term=fairness_term,
                 slack_minutes=slack,
+                reliability_term=reliability_term,
             )
         )
 

@@ -215,6 +215,7 @@ class ContractNetNegotiator:
         ledger=None,                     # ledger.interface.LedgerBackend | None
         attestation=None,                # negotiation.attestation.AttestationAuthority
         corefusal=None,                  # negotiation.collusion.CoRefusalDetector
+        reliability=None,                # fairness.metrics.ReliabilityLedger | None
         observer: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.hospitals = hospitals
@@ -233,6 +234,8 @@ class ContractNetNegotiator:
         #: Issues and verifies co-signed capacity attestations. None means the
         #: unattested protocol, which is the default and the ablation baseline.
         self.attestation = attestation
+        #: Who gives awarded beds back. None (the batch experiments) = no penalty.
+        self.reliability = reliability
         # Optional trace hook. The batch simulation leaves this None (an
         # observer that did work would distort the timings we are measuring);
         # the live demo server uses it to stream each protocol step to a UI.
@@ -363,7 +366,8 @@ class ContractNetNegotiator:
         know who has a free bed until it asks.
         """
         cap = self.config.max_peers * round_no
-        peers = [h for h in self.hospitals if h != req.origin]
+        peers = [h for h in self.hospitals
+                 if h != req.origin and h not in req.excluded]
         peers.sort(key=lambda h: self.travel_time(req.origin, h))
         return peers[:cap]
 
@@ -664,7 +668,8 @@ class ContractNetNegotiator:
     def award(
         self, req: TransferRequest, bids: list[Bid], now: float
     ) -> NegotiationOutcome:
-        scored = score_bids(req, bids, now, self.weights, self.fairness)
+        scored = score_bids(req, bids, now, self.weights, self.fairness,
+                            self.reliability)
         outcome = NegotiationOutcome(request=req, scored=scored, all_bids=bids)
 
         self._emit("scored", {
@@ -689,6 +694,7 @@ class ContractNetNegotiator:
                 "time_to_care": round(s.bid.time_to_care, 1),
                 "slack_minutes": round(s.slack_minutes, 1),
                 "fairness_credit": round(self.fairness.credit(s.bid.bidder), 3),
+                "reliability_term": round(s.reliability_term, 3),
             } for s in scored],
         })
 
@@ -772,6 +778,8 @@ class ContractNetNegotiator:
         )
 
         self.fairness.record_accept(chosen.bid.bidder, req.expected_los_minutes)
+        if self.reliability is not None:
+            self.reliability.record_award(chosen.bid.bidder)
         self.fairness.record_send(req.origin)
 
         if self.ledger is not None:

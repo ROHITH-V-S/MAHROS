@@ -134,6 +134,9 @@ class TransferRequest:
     expires_at: float = 0.0              # created_at + acuity.safe_window_minutes
     expected_los_minutes: float = 2880.0  # how long the receiving resource is tied up
     group: DemographicGroup = DemographicGroup.URBAN_INSURED  # for equity audit only
+    #: Hospitals not to ask: one that held a bed for this patient and then
+    #: declined it (broken equipment, no staff) is not asked again.
+    excluded: frozenset[str] = frozenset()
 
     status: RequestStatus = RequestStatus.PENDING
     awarded_to: str | None = None

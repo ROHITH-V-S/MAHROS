@@ -1,0 +1,18 @@
+% =========================================================================
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+% =========================================================================
+
+This paper presented \mahros{}, a Multi-Agent Hospital Resource Optimization System that brokers inter-hospital escalation transfers by parallel Contract-Net negotiation among hospital agents that keep their occupancy private. Every refusal becomes a verifiable claim: capability against the public CMS register, capacity against the refuser's own ledger-recorded commitments. Disputes are settled by Dung's grounded semantics, signed refusals and random spot checks extend verification to stronger adversaries, and every decision is recorded in a Merkle-linked ledger and a trigger-enforced, hash-chained PostgreSQL audit log.
+
+Evaluated on 27 real Houston and 30 real Phoenix hospitals, with a simulator that reproduces reported occupancy within 3.8 and 3.0 points from a cold start, \mahros{} met all seven objectives. It placed 13.0 points more patients in time than a perfect-information telephone search and was equivalent within $\pm2$ points to optimisers with full knowledge of occupancy. It recovered 62--77\% of the placements lost to false refusals with zero false accusations, outperformed a shared registry by up to 17.9 points under misreporting, restored most of the loss caused by a six-hospital cartel with 15\% random spot checks, and decided each transfer within milliseconds.
+
+Future work will proceed in five directions:
+\begin{enumerate}
+\setlength{\itemsep}{1pt}
+\item calibrating refusal behaviour to transfer-centre logs under a data-use agreement;
+\item estimating the deterrence effect of signed refusals through a field or survey study with bed managers;
+\item replacing the clinical-window proxy with a delay--outcome model estimated from linked transfer and outcome data;
+\item extending the privacy model to observers that accumulate messages over time, and evaluating secure computation for the award step \cite{leaute2013privacy};
+\item a pilot integration with a regional transfer service in which a central optimiser consumes \mahros{}-verified offers.
+\end{enumerate}

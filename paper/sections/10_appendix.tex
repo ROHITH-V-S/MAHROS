@@ -1,0 +1,115 @@
+% =========================================================================
+%  Appendices
+% =========================================================================
+
+\section{Model and Protocol Parameters}
+\label{app:params}
+Table~\ref{tab:params} lists every protocol, behaviour and baseline parameter with its value and status. \emph{Swept} parameters were varied in the sensitivity analysis of Section~\ref{sec:res-sens}.
+
+\begin{table}[!h]
+\centering
+\caption{Protocol, Behaviour and Baseline Parameters}
+\label{tab:params}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{2.9cm}p{2.2cm}p{2.6cm}@{}}
+\toprule
+Parameter & Value & Status \\
+\midrule
+Clinical windows, acuity 1--5 & 720/480/240/150/90 min & design; scale swept 0.7--1.5 \\
+Peers per round & 8 (16 in round 2) & design \\
+Rounds; retry interval & 2; 20 min & design \\
+Bid window; deliberation & 2 min; 0.75 min & design; deliberation swept 0--5 \\
+Reservation hold & 45 min & design \\
+Self-protection reserve & ICU 1, ward 2 & design; 0 for acuity $\ge4$ \\
+Score weights & 0.45, 0.25, 0.15, 0.15 & design \\
+Fairness window; objection & 200 accepts; 0.35 & design \\
+Comparable-time band & 15 min & design \\
+Reserve-challenge window & 60 min & design \\
+Ledger look-back & 240 min & design \\
+Ledger block size & 16 entries & design \\
+Agent coordination cost & 0.5 min / round & swept 0.25--2 \\
+Escalation probability & 0.14 & cited; swept 0.07--0.21 \\
+Escalation delay & lognormal, mean 7 h & swept 4--12 h \\
+Handover allowance & 12 min & swept 8--20 \\
+Cardiac cath share & 0.5 & swept 0.25--0.75 \\
+Comfort threshold $\theta$ & 0.55 & swept 0.3--0.8 \\
+Shirk probability $\phi$ & 1.0 & swept 0.5, 1.0 \\
+Expensive stay & $\ge$24 h & design \\
+Cautious extra reserve & 2 units & design \\
+Deterrence $\delta$ & 0.8 (default) & swept 0--1 \\
+Audit-referral window & 5 min & chosen by measurement \\
+Cartel abstention window & 60 min & matches challenge window \\
+Spot-check rate & 0 (default) & swept 0--30\% \\
+Phone call duration & $\mathcal{N}(9,3)$, min 2 & swept 5--15 \\
+Phone calls before giving up & 8 & design \\
+Phone stale-information prob. & 0 (headline) & swept 0--0.40 \\
+Central / registry dispatch & 1 / 3 min & design \\
+Batch window (optimal) & 5 min & design \\
+Fitting ceiling $\bar\rho$ & 0.95 & design \\
+Simulated horizon & 14 days & design \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Attack Rulebook and Verdict Rules}
+\label{app:rules}
+Let $\mathit{subj}(A)$ be the hospital that argument $A$ concerns. The only attacks are:
+\begin{enumerate}
+\setlength{\itemsep}{1pt}
+\item $\textsc{Challenge}(C)\wedge\textsc{Refusal}(R)\wedge\mathit{subj}(C)=\mathit{subj}(R)\Rightarrow C\rightarrow R$;
+\item $(\textsc{Defence}(D)\vee\textsc{Attestation}(D))\wedge\textsc{Challenge}(C)\wedge\mathit{subj}(D)=\mathit{subj}(C)\Rightarrow D\rightarrow C$;
+\item $\textsc{BurdenObjection}(O)\wedge\textsc{Bid}(B)\wedge\mathit{subj}(O)=\mathit{subj}(B)\Rightarrow O\rightarrow B$;
+\item $\textsc{CounterOffer}(K)\wedge\textsc{Bid}(B)\wedge\mathit{subj}(K)=\mathit{subj}(B)\Rightarrow K\rightarrow B$.
+\end{enumerate}
+Hospitals never attack each other directly, so no even attack cycle arises and every argument is labelled \textsc{in} or \textsc{out}. The fixed point of Eqs.~\eqref{eq:in}--\eqref{eq:out} is reached in at most three passes. A refusal is \textsc{in} if it is unchallenged or every challenge is answered, and \textsc{out} otherwise. For a refusal by $h$ labelled \textsc{out}: if $h$'s truthful assessment is feasible and meets the deadline, the truthful bid replaces the refusal and $h$ is counted as caught; otherwise the refusal stands with its truthful reason. A bid labelled \textsc{out} through rule 3 becomes a withdrawal (\texttt{withdrew\_over\_fair\_share}), recorded separately from an inability. A spot check is drawn only for capacity refusals, only under attestation, with probability $\theta'$ for a hospital caught before (if $\theta'>\theta_{\text{spot}}$) and $\theta_{\text{spot}}$ otherwise. A hospital that declines to sign a spot-checked refusal receives an unanswered challenge.
+
+\section{Database Schema}
+\label{app:db}
+Table~\ref{tab:schema} summarises the PostgreSQL schema by table class and the rule that governs each.
+
+\begin{table}[!h]
+\centering
+\caption{PostgreSQL Tables by Class}
+\label{tab:schema}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{1.25cm}p{3.35cm}p{3.05cm}@{}}
+\toprule
+Class & Tables & Rule \\
+\midrule
+Reference (real) & \texttt{hospitals}, \texttt{hospital\_capabilities}, \texttt{hhs\_weekly\_reports}, \texttt{travel\_times} & no app grant; \texttt{BEFORE} trigger blocks change except during data load \\
+Live state & \texttt{resources} (\texttt{occupied} only), \texttt{hospital\_settings} (\texttt{policy} only) & column grants; capacity locked by trigger; \texttt{CHECK} keeps occupancy within capacity; audited \\
+Records & \texttt{live\_epochs}, \texttt{patients}, \texttt{transfer\_requests}, \texttt{agent\_decisions}, \texttt{challenges}, \texttt{allocations}, \texttt{admissions}, \texttt{ledger\_blocks}, \texttt{ledger\_entries}, \texttt{report\_flags} & insert-only for the app (admission discharge columns updatable); audited \\
+Experiment & \texttt{simulation\_runs}, \texttt{phone\_tree\_records}, \texttt{prediction\_records} & run metadata and outputs \\
+Integrity & \texttt{audit\_log}, \texttt{audit\_checkpoints}, \texttt{system\_events} & appended only through security-definer functions \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reproduction}
+\label{app:repro}
+The repository at \url{https://github.com/ROHITH-V-S/MAHROS} (commit \texttt{1db8df5}) contains all code and the vendored real data. Every result is regenerated by one script per experiment:
+{\footnotesize
+\begin{verbatim}
+pip install -e ".[demo,db,analysis,attest,dev]"
+cd experiments
+python validate_occupancy.py houston_baseline 5
+python validate_occupancy.py houston_surge 5
+python validate_occupancy.py phoenix_baseline 5
+python data_integrity.py
+python run_all.py 5
+python significance.py 12
+python adversarial.py 6
+python registry_attack.py 6
+python attestation.py 6
+python collusion.py 6
+python reputation.py 6
+python replication.py 5
+python sensitivity.py 5
+python realtime.py
+python build_results.py
+cd .. && python -m pytest
+\end{verbatim}
+}
+The live system starts with \texttt{docker compose up -d --build}; the console is served on port 8090 and pgAdmin on port 5051. Seeds are $42+101i$, and every run is fully determined by \texttt{(scenario, seed)}.

@@ -129,6 +129,8 @@ def test_even_the_owner_cannot_change_real_data(admin, sql):
     "UPDATE audit_log SET actor = 'nobody'",
     "DELETE FROM agent_decisions",
     "UPDATE ledger_entries SET payload = '{}'",
+    "UPDATE bed_confirmations SET outcome = 'confirmed'",
+    "DELETE FROM bed_confirmations",
 ])
 def test_records_are_append_only_for_the_app(store, sql):
     from mahros.db.store import DataError
@@ -247,6 +249,186 @@ def test_awarded_bed_is_taken_in_the_database(store):
                              specialty="general", acuity=4, actor="user:test")
     rcv = r["agreement"]["receiver"]
     assert _pool(store, rcv, "icu_bed")["occupied"] == before[(rcv, "icu_bed")] + 1
+
+
+def test_held_bed_waits_in_the_receivers_inbox_until_confirmed(store):
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    rid, rcv = r["request"]["request_id"], r["agreement"]["receiver"]
+    box = store.inbox(rcv)
+    assert [w["request_id"] for w in box["waiting"]] == [rid]
+    assert box["waiting_by_hospital"] == {rcv: 1}
+    store.confirm_bed("user:bed-manager", rid)
+    box = store.inbox(rcv)
+    assert box["waiting"] == [] and box["decided"][0]["outcome"] == "confirmed"
+
+
+def test_declined_bed_is_freed_and_the_patient_reoffered_elsewhere(store):
+    from mahros.db.store import DataError
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    rid, rcv = r["request"]["request_id"], r["agreement"]["receiver"]
+    taken = _pool(store, rcv, "icu_bed")["occupied"]
+
+    held = store.decline_bed("user:bed-manager", rid, "equipment_fault")
+    assert _pool(store, rcv, "icu_bed")["occupied"] == taken - 1
+    assert store.inbox(rcv)["waiting"] == []
+
+    again = net.reoffer(held, actor="user:test")
+    assert again["request"]["patient_ref"] == r["request"]["patient_ref"]
+    asked = next(s for s in again["steps"] if s["kind"] == "cfp")["peers"]
+    assert rcv not in asked, "the hospital that declined must not be asked again"
+    assert again["request"]["window_min"] < r["request"]["window_min"], \
+        "the clinical clock keeps running from the original request"
+    store.record_reoffer("user:test", again["request"]["request_id"], rid,
+                         again["agreement"]["receiver"] if again["awarded"] else None)
+    trace = store.trace(rid)
+    assert [c["outcome"] for c in trace["confirmations"]] == ["declined", "reoffered"]
+    with pytest.raises(DataError):
+        store.confirm_bed("user:bed-manager", rid)   # decided once, never twice
+
+
+def test_time_limit_only_covers_beds_held_after_it_was_switched_on(store):
+    net = _net(store)
+    before = net.request_transfer(origin="450097", resource="icu_bed",
+                                  specialty="general", acuity=4, actor="user:test")
+    with store.tx() as cur:
+        cur.execute("SELECT now() AS n")
+        switched_on = cur.fetchone()["n"]
+    after = net.request_transfer(origin="450097", resource="icu_bed",
+                                 specialty="general", acuity=4, actor="user:test")
+    late = store.unanswered(0, switched_on)
+    assert after["request"]["request_id"] in late
+    assert before["request"]["request_id"] not in late, "never retroactive"
+    assert store.unanswered(3600, switched_on) == [], "not late yet"
+    rid = after["request"]["request_id"]
+    held = store.decline_bed("system:confirm-timeout", rid, "no_response")
+    again = net.reoffer(held, actor="system:confirm-timeout")
+    store.record_reoffer("system:confirm-timeout", again["request"]["request_id"], rid,
+                         again["agreement"]["receiver"] if again["awarded"] else None)
+    chain = store.reoffer_chain(again["request"]["request_id"])
+    assert chain["hops"] == 1
+    assert store.reoffer_chain(rid)["runner_up"] is not None
+
+
+def _decline(store, net, rid, reason):
+    """What the server does on a decline: free, cancel, re-offer, link."""
+    chain = store.reoffer_chain(rid)
+    held = store.decline_bed("user:bed-manager", rid, reason)
+    again = net.reoffer(held, actor="user:test", reason=reason,
+                        also_exclude=chain["declined"])
+    store.record_reoffer("user:test", again["request"]["request_id"], rid,
+                         again["agreement"]["receiver"] if again["awarded"] else None)
+    return again
+
+
+def test_no_hospital_that_declined_is_asked_again_down_the_chain(store):
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    first = r["agreement"]["receiver"]
+    r2 = _decline(store, net, r["request"]["request_id"], "equipment_fault")
+    second = r2["agreement"]["receiver"]
+    r3 = _decline(store, net, r2["request"]["request_id"], "no_staff")
+    asked = next(s for s in r3["steps"] if s["kind"] == "cfp")["peers"]
+    assert first not in asked and second not in asked
+    assert store.reoffer_chain(r3["request"]["request_id"])["hops"] == 2
+    assert r3["request"]["window_min"] <= r2["request"]["window_min"] \
+        <= r["request"]["window_min"]
+
+
+def test_declined_acceptance_stops_being_evidence_and_burden(store):
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    rcv, agr = r["agreement"]["receiver"], r["agreement"]["agreement_id"]
+    assert [e["agreement_id"] for e in net.ledger.accepted_by(rcv)] == [agr]
+    load = net.fairness.recent_load(rcv)
+    _decline(store, net, r["request"]["request_id"], "bed_not_ready")
+    assert net.ledger.accepted_by(rcv) == []
+    assert net.fairness.recent_load(rcv) == load - 1
+    # ... and the same after a restart, rebuilt from the database
+    fresh = _net(store)
+    assert any(e.get("agreement_id") == agr and "receiver" in e
+               for e in fresh.ledger.history()), "the agreement is still on the record"
+    assert fresh.ledger.accepted_by(rcv) == []
+    assert fresh.fairness.recent_load(rcv) == load - 1
+
+
+def test_accept_then_give_back_does_not_wipe_the_evidence(store):
+    """The loophole: take a patient, give it back, then say 'full' with a clean record."""
+    net = _net(store)
+    store.update_hospital("user:test", "450358", occupied={"icu_bed": 100},
+                          policy="strategic")
+    r = net.request_transfer(origin="450076", resource="icu_bed", specialty="general",
+                             acuity=5, actor="user:test")
+    assert r["agreement"]["receiver"] == "450358"
+    _decline(store, net, r["request"]["request_id"], "equipment_fault")
+    lie = net.request_transfer(origin="450076", resource="icu_bed", specialty="general",
+                               acuity=4, actor="user:test")
+    [c] = [s for s in lie["steps"] if s["kind"] == "challenge" and s["target"] == "450358"]
+    assert "gave it back" in c["claim"]
+    assert any(s["kind"] == "overruled" and s["bidder"] == "450358" for s in lie["steps"]), \
+        "a protective hospital with free beds cannot defend the refusal"
+
+
+def test_an_honest_hospital_that_gave_a_bed_back_defends_itself(store):
+    net = _net(store)
+    store.update_hospital("user:test", "450358", occupied={"icu_bed": 100})
+    r = net.request_transfer(origin="450076", resource="icu_bed", specialty="general",
+                             acuity=5, actor="user:test")
+    _decline(store, net, r["request"]["request_id"], "equipment_fault")
+    store.update_hospital("user:test", "450358", occupied={"icu_bed": 158})   # really full
+    again = net.request_transfer(origin="450076", resource="icu_bed", specialty="general",
+                                 acuity=4, actor="user:test")
+    assert any(s["kind"] == "challenge" and s["target"] == "450358" for s in again["steps"])
+    [d] = [s for s in again["steps"] if s["kind"] == "defence" and s["defender"] == "450358"]
+    assert d["upheld"], "its own beds back the refusal"
+    assert not any(s["kind"] == "overruled" and s["bidder"] == "450358"
+                   for s in again["steps"])
+
+
+def test_a_give_back_costs_the_patient_time(store):
+    from mahros.server.live import GIVE_BACK_MINUTES
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    a = _decline(store, net, r["request"]["request_id"], "no_staff")
+    lost = r["request"]["window_min"] - a["request"]["window_min"]
+    assert lost >= GIVE_BACK_MINUTES["no_staff"], f"only {lost} min lost"
+    b = _decline(store, net, a["request"]["request_id"], "no_response")
+    lost = a["request"]["window_min"] - b["request"]["window_min"]
+    assert lost >= GIVE_BACK_MINUTES["no_response"], f"only {lost} min lost"
+
+
+def test_reliability_follows_give_backs_and_survives_a_restart(store):
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    rcv = r["agreement"]["receiver"]
+    assert net.reliability.rate(rcv) == 0.0
+    again = _decline(store, net, r["request"]["request_id"], "bed_not_ready")
+    rate = net.reliability.rate(rcv)
+    assert rate > 0
+    fresh = _net(store)
+    assert fresh.reliability.rate(rcv) == rate
+    other = again["agreement"]["receiver"]
+    assert fresh.reliability.rate(other) == 0.0
+
+
+def test_a_bed_cannot_be_decided_twice_even_bypassing_the_app(store):
+    from mahros.db.store import DataError
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    rid, rcv = r["request"]["request_id"], r["agreement"]["receiver"]
+    store.confirm_bed("user:bed-manager", rid)
+    with pytest.raises(DataError):
+        with store.tx("user:test") as cur:
+            cur.execute("INSERT INTO bed_confirmations (request_id, hospital_id, outcome, "
+                        "reason) VALUES (%s, %s, 'declined', 'no_staff')", (rid, rcv))
 
 
 def test_engine_uses_the_database_values(store):

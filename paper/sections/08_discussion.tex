@@ -1,0 +1,33 @@
+% =========================================================================
+\section{Discussion}
+\label{sec:discussion}
+% =========================================================================
+
+\subsection{Significance of the Results}
+The results support the central design claim: a hospital's own recorded commitments carry enough evidence to verify capacity refusals without anyone seeing capacity. Under systematic false refusals, \mahros{} recovered 62--77\% of the lost placements and never overruled a truthful hospital, and it outperformed a shared registry by up to 17.9 points. On an honest network it matched two omniscient optimisers within the declared $\pm2$-point margin. The advantage over the telephone search comes from parallelism. What decentralised verification adds beyond any parallel method is robustness to misreporting while occupancy stays private.
+
+\subsection{Relationship to the Research Gaps}
+Gap 1 (the disclosure dilemma) is closed by combining parallel Contract-Net bidding with evidence-based checking, so that no occupancy value is ever transmitted. Gap 2 (no evidence base for private claims) is closed by the capability/capacity split and the ledger predicate of Eq.~\eqref{eq:direct}. Gap 3 (misreporting outside the evaluation) is addressed by the swept adversary, the cautious-hospital control and two real networks. Gap 4 (no inspectable accountability) is addressed by the Merkle-linked ledger, the trigger-enforced audit chain and the console, through which a reviewer can trace any award to its evidence.
+
+\subsection{Comparison with Alternatives}
+Compared with centralised optimisation \cite{dijkstra2023balancing,parker2020redistribution,mehrotra2020ventilator}, \mahros{} gives up at most a fraction of a point of allocation quality while removing the need for a central occupancy store, and it models misreporting rather than assuming truth. The approaches are complementary: a regional optimiser could consume \mahros{}' verified offers instead of raw self-reports. Compared with argumentation-based negotiation \cite{rahwan2003abn,amgoud2007unified}, \mahros{} admits only evidence-backed attacks, so outcomes never depend on persuasion and a truthful participant always prevails. Compared with reputation systems \cite{ramchurn2004trust,sabater2005trust}, it needs no outcome feedback, which this domain never provides. Indeed, a minimal reputation mechanism (risk-based spot checks) did not outperform uniform random audits.
+
+\subsection{Trade-Offs}
+Parallel asking generates about four times the messages of a telephone search. Electronically this is negligible, but each message is a query to a hospital's bed system. Cautious hospitals face more challenges and always win them, which is friction rather than harm. The capacity predicate rests on a 60-minute window: a discharge inside the window can make a true refusal look contradicted, and the signed variant is the realistic way to let a hospital certify its position. Fairness reduced burden inequality significantly at no cost in success, and its guardrails prevent it from ever delaying a critically ill patient.
+
+\subsection{Deployment Implications}
+A regional deployment needs five elements: an interface from each hospital's bed-management system to its agent, a ledger operated by a party no single hospital controls, per-institution signing keys with an independent co-signer such as a state health department, governance for overruled refusals and audit referrals, and clinical sign-off on windows, reserves and weights. Statewide transfer lines show that cross-system coordination can be stood up quickly \cite{villarroel2023surgeline}. \mahros{} is best positioned as the verification layer such a service adopts.
+
+\subsection{Generalisability}
+The protocol requires only that capability be public and commitments be recorded; nothing in it is specific to U.S.\ hospitals or to ICU beds. Any setting where autonomous providers allocate scarce, privately observed capacity and have an incentive to refuse has the same structure, including long-term-care placement, organ-transport logistics, shelter beds and specialist referral queues. Phoenix reproduced the direction of every effect with smaller magnitudes, as expected for a less congested region.
+
+\subsection{Ethical Considerations}
+No real patient data are used. All patients are simulated and labelled as such by a database constraint, and the hospital data are public and aggregate. The Data Integrity flags concern real reports from named hospitals. They are described as \emph{unreliable}, never as dishonest, because a frozen or impossible report can have an innocent cause such as a stale data feed. The simulated misreporting policies are assigned to the largest hospitals first because those have most to gain; this is a modelling choice about incentives, not an allegation about any institution. An overruled refusal or an audit referral is designed as a prompt for review, never as an automatic sanction.
+
+\subsection{Limitations and Threats to Validity}
+\emph{Simulated behaviour.} No public dataset records how hospitals answer transfer requests, so refusal behaviour is modelled and every behavioural parameter is swept. The occupancy model is validated against real reports; the behaviour model is not.
+\emph{Proxy outcome.} Reaching care within an acuity-dependent window is a proxy for harm, not a mortality model, and the windows are design assumptions whose sweep preserved every ranking.
+\emph{Data.} The HHS facility-level reporting mandate ended in May 2024, and the data exclude Veterans Affairs and other federal facilities. Road times are free-flow. The case-mix is Californian because no Texas or Arizona transfer data by diagnosis are public.
+\emph{Tuned design choices.} The scoring weights and protocol timings are design choices. The fairness ablation covers one term, but the weights are not swept jointly.
+\emph{Deterrence and collusion.} Signed refusals depend on an unmeasured deterrence parameter. Collusion is countered by random audits, not by detection.
+\emph{Integrity.} Trigger locks prevent accidental change, and the audit chain detects deliberate change. A superuser rewrite is detected only by a checkpoint held outside the database.

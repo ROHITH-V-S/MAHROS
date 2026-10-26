@@ -1,0 +1,322 @@
+% =========================================================================
+\section{Design Approach and Details}
+\label{sec:design}
+% =========================================================================
+
+\subsection{System Architecture}
+Figure~\ref{fig:arch} shows the layered architecture. Real public data are calibrated into a network of hospital agents. A transfer manager per request runs the negotiation, a Verifier checks refusals against the public register and the transfer ledger, and every agreement, refusal and agent decision is persisted in PostgreSQL behind a hash-chained audit log. The same engine runs in the batch simulator and in the live console.
+
+\begin{figure*}[!t]
+\centering
+\begin{tikzpicture}[font=\footnotesize, >=Stealth,
+  bx/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, minimum height=8mm},
+  agent/.style={bx, fill=cM!10, draw=cM!70},
+  data/.style={bx, fill=cG!8, draw=cG!60},
+  st/.style={bx, fill=gray!10, draw=gray!60},
+  lab/.style={font=\scriptsize\itshape, text=gray!70!black},
+]
+\node[data, minimum width=3.0cm] (hhs) at (0,0) {HHS/CDC NHSN weekly\\capacity reports \cite{hhs_capacity_dataset}};
+\node[data, minimum width=3.0cm, right=3mm of hhs] (cms) {CMS Provider of Services\\capability register \cite{cms_pos}};
+\node[data, minimum width=3.0cm, right=3mm of cms] (osrm) {OSRM / OpenStreetMap\\road times \cite{luxen2011osrm}};
+\node[data, minimum width=3.0cm, right=3mm of osrm] (hcai) {California HCAI 2021\\transfer case-mix \cite{hcai_transfers}};
+\node[lab, left=2mm of hhs, rotate=90, anchor=south] {data layer};
+\node[bx, fill=white, minimum width=12.9cm, below=6mm of $(cms)!0.5!(osrm)$] (cal) {Calibration: per-pool Erlang-B inversion of reported occupancy $\cdot$ warm start at the reported week $\cdot$ provenance labels};
+\foreach \n in {hhs,cms,osrm,hcai} \draw[->, gray] (\n.south) -- (\n.south |- cal.north);
+\node[agent, minimum width=3.3cm, below=8mm of cal.south west, anchor=north west] (ha) {Hospital agent $h$\\(one per hospital)\\[1pt]\scriptsize resource agents: ward, HDU,\\\scriptsize ICU, OR, ventilator, cath lab};
+\node[agent, minimum width=3.0cm, right=4mm of ha] (tm) {Transfer manager\\(one per request)\\[1pt]\scriptsize announce, collect,\\\scriptsize score, award};
+\node[agent, minimum width=3.0cm, right=4mm of tm] (ver) {Verifier\\[1pt]\scriptsize registry \& ledger checks,\\\scriptsize spot checks, grounded\\\scriptsize labelling};
+\node[agent, minimum width=2.4cm, right=4mm of ver] (dia) {Data Integrity \&\\Regional Monitor\\[1pt]\scriptsize report flags,\\\scriptsize bottlenecks};
+\node[lab, left=2mm of ha, rotate=90, anchor=south] {agent layer};
+\draw[<->, cM] (ha) -- (tm);
+\draw[<->, cM] (tm) -- (ver);
+\draw[->, gray] (cal.south -| ha.north) -- (ha.north);
+\draw[->, gray] (cal.south -| dia.north) -- (dia.north);
+\node[st, minimum width=4.2cm, below=9mm of $(ha.south)!0.5!(tm.south)$] (led) {Transfer ledger\\\scriptsize Merkle-linked blocks of agreements and refusals};
+\node[st, minimum width=4.2cm, right=5mm of led] (pg) {PostgreSQL 16\\\scriptsize locked reference data, decisions, challenges,\\\scriptsize allocations, hash-chained audit log};
+\node[st, minimum width=2.9cm, right=5mm of pg] (ui) {Browser console\\\scriptsize FastAPI + WebSocket\\\scriptsize pgAdmin inspection};
+\draw[->] (tm.south) -- ++(0,-3mm) -| ([xshift=-6mm]led.north);
+\draw[<-, dashed] (ver.south) -- ++(0,-3.6mm) -| ([xshift=8mm]led.north) node[pos=0.25, above, font=\scriptsize]{evidence};
+\draw[->] (led.east) -- (pg.west);
+\draw[<->] (pg.east) -- (ui.west);
+\draw[->, gray] (dia.south) |- ([yshift=2mm]pg.north east);
+\node[lab, left=2mm of led, rotate=90, anchor=south] {record layer};
+\end{tikzpicture}
+\caption{System architecture of \mahros{}: data layer (real public sources), agent layer (hospital, transfer-manager, verifier, data-integrity and regional-monitor agents) and record layer (ledger, PostgreSQL, console).}
+\label{fig:arch}
+\end{figure*}
+
+\subsection{Mathematical Formulation of the Pipeline}
+\label{sec:pipeline}
+Each transfer request $q$ is processed by a sequence of deterministic transformations, one per protocol phase.
+\begin{enumerate}
+\setlength{\itemsep}{2pt}
+\item \emph{Announcement.} The origin selects the peer set by public road time only:
+\begin{equation}
+  P_q^{(k)} = \operatorname{arg\,min}^{(8k)}_{h\in\mathcal{H}\setminus\{o_q\}} \tau_{o_q,h},\qquad k\in\{1,2\},
+  \label{eq:peers}
+\end{equation}
+the $8k$ nearest hospitals in round $k$, and sends each the public view $\pi(q)$, which carries no patient identity and no demographic data.
+\item \emph{Private assessment and report.} Each peer computes a truthful assessment $A_h(q)=\mathrm{Assess}_h(\pi(q),x_h)$ and reports $\hat{A}_h(q)=\beta_h(A_h(q),q)$ through its bidding policy $\beta_h$. Only $\hat{A}_h$ leaves the hospital.
+\item \emph{Verification.} For each refusal the Verifier computes a challenge set from public evidence only, namely the capability register $\mathcal{G}$ and the ledger $L$:
+\begin{equation}
+  C_q = \{\mathrm{ch}(h) : \hat{A}_h(q)=\textsc{ref} \wedge \mathrm{Contra}(h,q,\mathcal{G},L,t)\},
+  \label{eq:challenges}
+\end{equation}
+where \textsc{ref} denotes a refusal.
+\item \emph{Deliberation.} Bids, refusals, challenges and defences form an argumentation framework $\mathcal{AF}_q$, whose grounded labelling $\lambda_q=\mathrm{Grd}(\mathcal{AF}_q)$ strikes out undefended refusals. Each struck-out refusal is replaced by the hospital's truthful bid.
+\item \emph{Award.} Among the surviving feasible bids $F_q=\{h:T_q(h)\le d_q\}$, the winner is
+\begin{equation}
+  h_q^\star=\operatorname*{arg\,max}_{h\in F_q}\;\bigl(S_h,\,-T_q(h),\,-\mathrm{id}(h)\bigr)\ \text{(lexicographic)},
+  \label{eq:award}
+\end{equation}
+where $S_h$ is the score of Eq.~\eqref{eq:score}.
+\item \emph{Record.} The agreement and every capacity refusal are appended to the ledger, $L\leftarrow L\,\Vert\,\langle q,h_q^\star,\mathrm{H}(\text{terms})\rangle$, and persisted atomically with the audit chain of Eq.~\eqref{eq:audit}.
+\end{enumerate}
+
+\subsection{Data and Calibration Layer}
+\label{sec:data}
+\emph{Study networks.} The headline network contains the 27 short-term acute hospitals with at least 25 inpatient beds within 40\,km of the Texas Medical Center in Houston: 8,176 inpatient beds and 1,029 staffed adult ICU beds in the reference week of 10 January 2021. Two multi-site system aggregates reporting hundreds of beds at administrative addresses are excluded, with stated reasons. The replication network contains 30 hospitals in metropolitan Phoenix, selected by the same code. Scenarios are real weeks chosen by observed occupancy (Table~\ref{tab:weeks}). Houston ran fuller in December 2023 than during the COVID-19 waves.
+
+Table~\ref{tab:networks} summarises both networks by tier in their reference week.
+
+\begin{table}[!t]
+\centering
+\caption{Study Networks by Tier, Reference Week 10 January 2021 (Reported Data)}
+\label{tab:networks}
+\scriptsize
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+Region & Tier & Hosp. & Inpatient beds & ICU beds & Cath lab & Mean occ. \\
+\midrule
+\multirow{3}{*}{Houston} & 1 (community) & 10 & 675 & 114 & 8 & 0.83 \\
+ & 2 (district) & 11 & 2,890 & 260 & 10 & 0.93 \\
+ & 3 (tertiary) & 6 & 4,611 & 656 & 6 & 0.81 \\
+\midrule
+\multirow{3}{*}{Phoenix} & 1 (community) & 11 & 896 & 119 & 5 & 0.56 \\
+ & 2 (district) & 8 & 2,356 & 382 & 6 & 0.82 \\
+ & 3 (tertiary) & 11 & 6,220 & 959 & 8 & 0.77 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Erlang-B calibration.} Each ward, HDU and ICU pool is modelled as an Erlang loss system with $c$ beds and offered load $a$ \cite{debruin2010erlang,green2002beds}. The blocking probability follows the stable recursion
+\begin{equation}
+  B(k,a)=\frac{a\,B(k-1,a)}{k + a\,B(k-1,a)},\quad k=1,\dots,c,\quad B(0,a)=1,
+  \label{eq:erlang}
+\end{equation}
+and for the reported occupancy $\rho_h$ the offered load is obtained by bisection on
+\begin{equation}
+  a_{h,r}\bigl(1-B(c_{h,r},a_{h,r})\bigr) = \min(\rho_h,\bar\rho)\,c_{h,r},\qquad \bar\rho=0.95.
+  \label{eq:inversion}
+\end{equation}
+By Little's law \cite{little1961proof}, the pool's arrival rate is $\lambda_{h,r}=a_{h,r}/\bar W_r$, using the realised lognormal mean stay ($\sigma=0.6$), scaled to a network mean of 4.6 days. The fit is per pool rather than aggregate, so an ICU-heavy facility does not overflow its ward. The cap $\bar\rho$ exists because a stationary loss system cannot sit at 100\% occupancy; facilities above the cap are fitted to it and keep their reported value for validation.
+
+\emph{Warm start and escalation.} Runs start at the occupancy reported that week. Patients already present receive a length-biased remaining stay: for a lognormal$(\mu,\sigma)$ stay, the length-biased stay is lognormal$(\mu+\sigma^2,\sigma)$, and the time left is a uniform fraction of it. Each admission escalates with probability 0.14 after a lognormal delay (mean 7\,h), which gives transfer requests for about 4.5\% of admissions, consistent with the U.S.\ critical-care transfer share \cite{iwashyna2009networks}. The resource each request needs follows the case-mix of 37,439 real California transfers (Table~\ref{tab:casemix}).
+
+\emph{Provenance.} Table~\ref{tab:prov} lists every simulator input with its provenance class.
+
+\begin{table}[!t]
+\centering
+\caption{Provenance of Simulator Inputs (Houston): 8 Observed, 4 Derived, 6 Assumed}
+\label{tab:prov}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{2.2cm}p{1.0cm}p{4.3cm}@{}}
+\toprule
+Input & Class & Source or rule \\
+\midrule
+Specialty capability & observed & CMS POS Q1 2021 certification codes \\
+Catheterisation labs & observed & CMS POS catheterisation room count \\
+ICU beds & observed & HHS staffed adult ICU beds (7-day avg.) \\
+Paediatric capability & observed & HHS staffed paediatric ICU beds $>0$ \\
+Identifier, name, coordinates & observed & HHS CCN, name, geocoded address \\
+Travel time & observed & OSRM over OpenStreetMap \\
+\midrule
+Ward beds & derived & inpatient beds minus ICU and HDU \\
+Admission mix & derived & observed bed composition / pool stay \\
+Arrival rate & derived & Erlang-B inversion, Eq.~\eqref{eq:inversion} \\
+Tier & derived & beds vs.\ national percentiles, gated on ICU \\
+\midrule
+HDU beds; ventilators & assumed & $0.5\times$ and $0.8\times$ ICU beds \\
+OR slots; coordinators & assumed & 1 per 30 and 1 per 150 inpatient beds \\
+Handover; mean stay & assumed & 12\,min (swept 8--20); 4.6 days (cited) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{Escalation Case-Mix from 37,439 California Transfers (2021)}
+\label{tab:casemix}
+\scriptsize
+\begin{tabular}{@{}lr|lr@{}}
+\toprule
+Profile & Share & Profile & Share \\
+\midrule
+HDU, general        & 19.7\% & ICU, neuro          & 9.1\% \\
+ICU, general        & 18.2\% & OR, general         & 5.7\% \\
+Ventilator          & 15.1\% & HDU, obstetric      & 3.5\% \\
+Cath lab, cardiac   & 12.5\% & OR, trauma          & 2.5\% \\
+ICU, cardiac        & 12.5\% & ICU, paediatric     & 1.1\% \\
+                    &        & ICU, burns          & 0.1\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Agent Layer}
+\label{sec:agents}
+\emph{Resource agents.} One agent per pool assesses a request. It refuses with \texttt{resource\_not\_offered} if the pool has zero capacity, with \texttt{no\_specialty\_capability} if the capability match is $\kappa=0$, and with \texttt{at\_self\_protection\_reserve} if the free units do not exceed the reserve. The match $\kappa$ is 1 for a listed specialty, 0.9 for general care and 0.6 for an unlisted specialty at a tertiary centre. The reserve is one ICU unit and two ward units, falls by one for acuity 3, and is zero for acuity $\ge4$. Otherwise the agent reports preparation time, $\kappa$, and the post-acceptance strain
+\begin{equation}
+  \sigma^{+}_{h,r}(q) = \frac{x_{h,r}+y_{h,r}+1}{c_{h,r}},
+  \label{eq:strain}
+\end{equation}
+where $y_{h,r}$ counts reservations. It also computes a private opportunity cost $\pi_h(q)=(\sigma^{+})^3(1+0.25\,\ell_q/1440)$, which never leaves the hospital.
+
+\emph{Hospital agents and behaviour policies.} A bidding policy maps the truthful assessment to the reported one. \textsc{Honest} reports the truth. \textsc{Protective} fabricates a refusal with probability $\phi$ when the patient is expensive ($\ell_q\ge24$\,h) or the hospital would exceed a comfort threshold $\theta$ (default 0.55), never for acuity 5, and chooses the most plausible excuse. \textsc{Cautious} never lies but holds two extra units in reserve; it is the control against false accusations. \textsc{Colluding} is protective and also refuses whenever a fellow cartel member refused the same resource in the last 60\,min. Policies are assigned in nested, incentive-ordered fashion, starting from tertiary centres.
+
+\subsection{Contract-Net Negotiation}
+\label{sec:protocol}
+Algorithm~\ref{alg:mahros} gives the negotiation. Its distinctive step is deliberation (lines 5--15) between bidding and award. All bids arrive in one parallel window, so a round costs 2\,min regardless of the number of peers; that parallelism is what replaces the serial telephone search.
+
+\begin{algorithm}[!t]
+\caption{\mahros{} negotiation for request $q$ at time $t$}
+\label{alg:mahros}
+\small
+\begin{algorithmic}[1]
+\Require request $q$, hospitals $\mathcal{H}$, ledger $L$, register $\mathcal{G}$
+\Ensure agreement or failure
+\For{$k=1,2$}
+  \State $P \gets$ the $8k$ peers nearest to $o_q$ (Eq.~\ref{eq:peers})
+  \State send CFP$(\pi(q))$ to $P$; $B\gets\{\hat{A}_p(q)\}_{p\in P}$
+  \State $\mathcal{A}\gets$ bid and refusal arguments for $B$
+  \State $L.\textsc{AppendRefusal}(b)$ for every capacity refusal $b$
+  \ForAll{refusals $b\in B$}
+    \If{attested, capacity reason, $U<\theta_{\text{spot}}$}
+      \State spot check: \textsc{Attest}$(b)$ or challenge
+    \ElsIf{$\textsc{Contra}(b,\mathcal{G},L,t)$}
+      \State challenge; defence if \textsc{Defend}$(b)$ (or \textsc{Attest})
+    \EndIf
+  \EndFor
+  \State add admissible burden objections
+  \State $\lambda\gets\textsc{Grounded}(\mathcal{A})$
+  \State replace each \textsc{out} refusal by its truthful bid
+  \State $t\gets t+0.75$; rank on-time bids by Eq.~\eqref{eq:score}
+  \For{candidate $h$ in rank order}
+    \If{$h.\textsc{Reserve}(q, t+45)$} \State $L.\textsc{AppendAgreement}(q,h)$; \Return agreement \EndIf
+  \EndFor
+  \If{$t+2 \ge d_q$} \textbf{break} \EndIf
+\EndFor
+\State \Return failure
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Refusal Verification}
+\label{sec:verify}
+The design principle is that \emph{capability is public and capacity is private}. A capability refusal is checked against the public register. Reason \texttt{no\_specialty\_capability} is contradicted if $s_q\in\mathcal{G}_h$, and \texttt{resource\_not\_offered} if $h$ is listed as operating pool $r_q$ with positive capacity. A capacity refusal is checked against the refuser's own recorded commitments, the only public evidence that bears on it. It is directly contradicted if
+\begin{equation}
+  \exists\, e\in L:\; e.\text{receiver}=h,\; e.\text{resource}=r_q,\; t-60\le e.t\le t ,
+  \label{eq:direct}
+\end{equation}
+that is, if the hospital accepted a patient needing the same resource within the hour. Otherwise it is challenged on history if, within the last 240\,min, the hospital made a recorded capacity refusal followed within 60\,min by its own acceptance of the same resource. Every capacity refusal is appended to the ledger \emph{before} examination, so it becomes evidence against later ones. The check achieves accountability without disclosure: it never reads a hospital's state, only what the hospital publicly committed to.
+
+\subsection{Dispute Resolution by Grounded Semantics}
+\label{sec:argumentation}
+Each negotiation builds a Dung framework $\mathcal{AF}=(\mathcal{A},\rightarrow)$ \cite{dung1995acceptability} with exactly four attack rules. A challenge attacks the refusal it names. A defence or attestation attacks the challenge it answers. A burden objection attacks the objector's own bid. A counter-offer attacks the hospital's original bid. Hospitals never attack one another directly. The labelling $\lambda:\mathcal{A}\to\{\textsc{in},\textsc{out},\textsc{undec}\}$ is the least fixed point of
+\begin{align}
+  \lambda(A)=\textsc{in} \;&\Leftarrow\; \forall B\rightarrow A:\ \lambda(B)=\textsc{out}, \label{eq:in}\\
+  \lambda(A)=\textsc{out} \;&\Leftarrow\; \exists B\rightarrow A:\ \lambda(B)=\textsc{in}, \label{eq:out}
+\end{align}
+which yields the unique grounded extension \cite{baroni2011semantics}. Figure~\ref{fig:af} shows the two patterns that arise: reinstatement \cite{caminada2006reinstatement} when the hospital defends, and defeat when it cannot. A struck-out refusal is replaced by the hospital's truthful bid. If that bid is still infeasible, the refusal stands, so no hospital is ever compelled beyond its real capacity. Because an honest refusal is backed by the refuser's real state, it can always be defended, and truthful hospitals are never overruled.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >=Stealth, node distance=7mm,
+  arg/.style={draw, circle, minimum size=7.5mm, inner sep=0pt, align=center},
+  inn/.style={arg, fill=cG!20, draw=cG}, outt/.style={arg, fill=cP!15, draw=cP, dashed}]
+\node[inn] (r1) {$R$};
+\node[outt, right=of r1] (c1) {$C$};
+\node[inn, right=of c1] (d1) {$D$};
+\draw[->] (c1) -- (r1); \draw[->] (d1) -- (c1);
+\node[below=1mm of c1, align=center] {(a) truthful: refusal reinstated};
+\node[outt, below=12mm of r1] (r2) {$R$};
+\node[inn, right=of r2] (c2) {$C$};
+\draw[->] (c2) -- (r2);
+\node[below=1mm of c2, align=center] {(b) fabricated: refusal struck out};
+\end{tikzpicture}
+\caption{Grounded labelling of a challenged refusal. $R$ refusal, $C$ evidence-backed challenge, $D$ defence or signed attestation. Green: \textsc{in}; red dashed: \textsc{out}.}
+\label{fig:af}
+\end{figure}
+
+\subsection{Signed Refusals (Attestation)}
+\label{sec:attest}
+In the attested protocol a challenged hospital discharges the challenge only by signing the contested predicate. It may sign \textsc{no\_unit\_available} (no unit was free for this request at time $t$) or \textsc{at\_declared\_reserve} (the only free units lie inside a declared reserve). The second predicate lets a cautious hospital certify its true position. The canonical payload (hospital, request, resource, predicate, time, nonce) is signed with the hospital's Ed25519 key \cite{bernstein2012ed25519} and co-signed by an independent key, such as a regulator or record-system vendor, so a cartel cannot vouch for itself. No bed count is ever signed. A protective hospital that fabricated a refusal declines to sign with probability $\delta$, the deterrence, and otherwise signs falsely. Post hoc, a signed ``no unit available'' followed within 5\,min by the same hospital's acceptance of that resource generates an advisory \emph{audit referral} for a regulator.
+
+\subsection{Collusion Defence}
+\label{sec:collusion}
+A cartel whose members never accept a resource while any member's refusal of it is outstanding leaves no contradiction for Eq.~\eqref{eq:direct} to find. \mahros{} therefore adds two mechanisms. The first is \emph{co-refusal monitoring}, which tracks the temporal follow-on lift
+\begin{equation}
+  \mathrm{FL}(a,b) = \frac{\Pr[b \text{ refuses } r \mid a \text{ refused } r \text{ within } 60\,\text{min}]}{\Pr[b \text{ refuses}]}
+  \label{eq:lift}
+\end{equation}
+as an advisory signal \cite{porter1993bidrigging}. The second is \emph{random spot checks}: with probability $\theta_{\text{spot}}$ a capacity refusal that nothing contradicts is challenged anyway and must be signed. This is random inspection \cite{becker1968crime} in protocol form. A risk-based variant checks hospitals already caught at a higher rate $\theta'$.
+
+\subsection{Award Scoring and Fairness}
+\label{sec:scoring}
+Bids that cannot meet the deadline are discarded, never traded off. For each surviving bid the time term blends relative speed with the absolute safety margin:
+\begin{equation}
+  \tau^{\star}_h = 0.6\Bigl(1-\tfrac{T_h - T_{\min}}{T_{\max}-T_{\min}}\Bigr) + 0.4\,\mathrm{clip}_{[0,1]}\!\Bigl(\tfrac{d_q - T_h}{d_q - t_q}\Bigr).
+  \label{eq:timeterm}
+\end{equation}
+The score is
+\begin{equation}
+  S_h = 0.45\,\tau^{\star}_h + 0.25\,\kappa_h + 0.15\,(1-\sigma^{+}_h) - 0.15\,\gamma_h,
+  \label{eq:score}
+\end{equation}
+and for acuity $\ge4$ it collapses to $S'_h=0.75\,(0.45\tau^{\star}_h+0.25\kappa_h)/0.70+0.25\,S_h$, so equity never costs a critically ill patient time. The fairness credit is the relative deviation of a hospital's recent acceptances from its capacity share over the last 200 acceptances:
+\begin{equation}
+  \gamma_h = \mathrm{clip}_{[-1,1]}\!\left(\frac{n_h/n - \sigma_h}{\sigma_h}\right).
+  \label{eq:credit}
+\end{equation}
+A hospital with $\gamma_h>0.35$ may object to its own bid, but only for acuity $\le3$ and only when another bid is within 15\,min of its own time to care.
+
+\subsection{Ledger and Database Integrity}
+\label{sec:db}
+Agreements and capacity refusals form a ledger of Merkle-linked blocks of 16 entries \cite{merkle1988signature,haber1991timestamp}. Each block header commits to the previous block's hash and the Merkle root of its entries, and each agreement carries the SHA-256 hash of its canonical terms. Per-receiver, per-refuser and time-window indices keep every challenge lookup sub-linear. In PostgreSQL, real reference data (hospitals, capabilities, weekly reports, travel times) have no application write grant and are locked by a \texttt{BEFORE} trigger, even against the owner. Live state (occupancy, behaviour policy) is editable only through column grants and a capacity \texttt{CHECK}. Records are append-only. Every change fires a trigger that appends to a hash-chained audit log under an advisory lock:
+\begin{equation}
+\begin{aligned}
+  h_i &= \mathrm{SHA256}(m_i),\\
+  m_i &= h_{i-1}\,\|\,\mathit{ts}_i\,\|\,\mathit{actor}_i\,\|\,\mathit{op}_i\,\|\,\mathit{table}_i\\
+      &\qquad \|\,\mathit{pk}_i\,\|\,\mathit{before}_i\,\|\,\mathit{after}_i,
+\end{aligned}
+  \label{eq:audit}
+\end{equation}
+with $h_0=0^{64}$. A verification function recomputes the chain and reports the first broken row, which catches any edited, inserted or deleted audit row, together with any checkpoint that no longer matches. A checkpoint exported outside the database also detects a wholesale rewrite by a superuser.
+
+\subsection{Request Lifecycle}
+Figure~\ref{fig:states} gives the state machine of a transfer request as implemented.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >=Stealth, node distance=5mm and 6mm,
+  s/.style={draw=cM!70, fill=cM!8, rounded corners=6pt, minimum width=1.55cm, minimum height=6mm, align=center},
+  t/.style={s, fill=cG!12, draw=cG!70}, f/.style={s, fill=cP!12, draw=cP!70}]
+\node[s] (pend) at (0,0) {PENDING};
+\node[s] (ann) at (2.6,0) {ANNOUNCED};
+\node[s] (awd) at (5.2,0) {AWARDED};
+\node[f] (exp) at (0,-1.5) {EXPIRED};
+\node[f] (fail) at (2.6,-1.5) {FAILED};
+\node[s] (tr) at (5.2,-1.5) {IN\_TRANSIT};
+\node[t] (done) at (5.2,-3.0) {COMPLETED};
+\draw[->] (pend) -- node[above, font=\tiny]{CFP sent} (ann);
+\draw[->] (ann) -- node[above, font=\tiny]{award} (awd);
+\draw[->] (awd) -- node[right, font=\tiny]{unit reserved} (tr);
+\draw[->] (tr) -- node[right, font=\tiny]{patient arrives} (done);
+\draw[->] (ann) -- node[right, font=\tiny]{no feasible bid} (fail);
+\draw[->] (fail) -- node[above, font=\tiny]{$t\ge d_q$} (exp);
+\draw[->, dashed] ([xshift=-4mm]fail.north) -- node[left, font=\tiny]{retry} ([xshift=-4mm]ann.south);
+\draw[->, dashed] (tr.south west) to[bend left=12] node[below left, font=\tiny, align=right]{reservation lapsed:\\renegotiate} ([yshift=-1mm]fail.south east);
+\end{tikzpicture}
+\caption{Transfer-request state machine. A request completes only if care starts before its deadline $d_q$; otherwise it expires.}
+\label{fig:states}
+\end{figure}

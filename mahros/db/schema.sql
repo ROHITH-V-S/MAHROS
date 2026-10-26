@@ -210,6 +210,31 @@ CREATE TABLE IF NOT EXISTS allocations (
     FOREIGN KEY (ledger_epoch, ledger_block) REFERENCES ledger_blocks
 );
 
+-- An award holds a bed; the receiving hospital's bed manager then confirms
+-- it is really ready, or declines with a reason (broken equipment, not yet
+-- cleaned, no staff). A decline frees the bed and the patient is re-offered
+-- to the remaining hospitals: that new request is a 'reoffered' row pointing
+-- back at the declined one. Append-only, like every other record.
+CREATE TABLE IF NOT EXISTS bed_confirmations (
+    confirmation_id      bigserial PRIMARY KEY,
+    request_id           text NOT NULL REFERENCES transfer_requests,
+    hospital_id          varchar(10) REFERENCES hospitals,
+    outcome              text NOT NULL
+                         CHECK (outcome IN ('confirmed','declined','reoffered')),
+    reason               text,
+    previous_request_id  text REFERENCES transfer_requests,
+    created_at           timestamptz NOT NULL DEFAULT now()
+);
+-- Re-created so the list of reasons can grow on an existing database.
+-- no_response: nobody at the hospital answered in time; passed on automatically.
+ALTER TABLE bed_confirmations DROP CONSTRAINT IF EXISTS bed_confirmations_reason_check;
+ALTER TABLE bed_confirmations ADD CONSTRAINT bed_confirmations_reason_check
+    CHECK (reason IS NULL OR reason IN
+           ('equipment_fault','bed_not_ready','no_staff','other','no_response'));
+-- A held bed is confirmed or declined once, never both, never twice.
+CREATE UNIQUE INDEX IF NOT EXISTS bed_confirmations_once
+    ON bed_confirmations (request_id) WHERE outcome IN ('confirmed','declined');
+
 -- Batch experiments: one summary row per run (full detail only on request).
 CREATE TABLE IF NOT EXISTS simulation_runs (
     run_id         uuid PRIMARY KEY,
@@ -499,6 +524,7 @@ BEGIN
         ARRAY['agent_decisions',   'decision_id',   ''],
         ARRAY['challenges',        'challenge_id',  ''],
         ARRAY['allocations',       'allocation_id', ''],
+        ARRAY['bed_confirmations', 'confirmation_id', ''],
         ARRAY['ledger_blocks',     'epoch',         'block_index'],
         ARRAY['audit_checkpoints', 'checkpoint_id', '']
     ] LOOP
@@ -530,7 +556,7 @@ GRANT UPDATE (discharged_at, discharge_reason) ON admissions TO mahros_app;
 -- Records: append-only.
 GRANT INSERT ON live_epochs, patients, transfer_requests, agent_decisions,
                 challenges, ledger_blocks, ledger_entries, admissions,
-                allocations, simulation_runs, phone_tree_records,
+                allocations, bed_confirmations, simulation_runs, phone_tree_records,
                 prediction_records, system_events
     TO mahros_app;
 

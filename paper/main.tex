@@ -1,0 +1,99 @@
+% =========================================================================
+%  MAHROS -- IEEE journal-style paper
+%  Build:  pdflatex main && pdflatex main
+%  (references are pre-formatted in refs.tex; regenerate with
+%   scripts/build_refs.py after editing references.bib)
+% =========================================================================
+\documentclass[journal]{IEEEtran}
+
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage[nocompress]{cite}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric,shapes.multipart,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\usepgfplotslibrary{groupplots}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+% ---- house style -------------------------------------------------------
+\newcommand{\mahros}{MAHROS}
+\definecolor{cM}{HTML}{1F5FBF}   % MAHROS / agents
+\definecolor{cP}{HTML}{C0392B}   % phone tree / alerts
+\definecolor{cC}{HTML}{555555}   % central / oracle
+\definecolor{cR}{HTML}{D68910}   % registry / data
+\definecolor{cG}{HTML}{1E8449}   % honest / ok
+\pgfplotsset{
+  mahros/.style={
+    width=\columnwidth, height=0.62\columnwidth,
+    tick label style={font=\scriptsize}, label style={font=\footnotesize},
+    legend style={font=\scriptsize, draw=none, fill=white, fill opacity=0.85, text opacity=1},
+    grid=major, grid style={gray!20}, axis lines=left,
+  }
+}
+\tikzset{
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, font=\scriptsize},
+  proc/.style={box, fill=cM!8, draw=cM!70},
+  ext/.style={box, fill=gray!10, draw=gray!70, font=\scriptsize\bfseries},
+  store/.style={draw=cR!80, fill=cR!8, font=\scriptsize, inner sep=3pt, align=center},
+  flow/.style={->, >=Stealth, thin},
+  flowlab/.style={font=\tiny, fill=white, inner sep=1pt, align=center},
+}
+\algrenewcommand\algorithmicrequire{\textbf{Input:}}
+\algrenewcommand\algorithmicensure{\textbf{Output:}}
+% group headings inside the bibliography
+\newcommand{\refgroup}[1]{\item[]\hspace*{-\leftmargin}\textbf{#1}\vspace{2pt}}
+
+\hyphenation{Contract-Net Post-gre-SQL hos-pi-tal hos-pi-tals}
+
+\begin{document}
+
+\title{MAHROS: A Multi-Agent Hospital Resource Optimization System for Verifiable, Privacy-Preserving Inter-Hospital Transfer Negotiation}
+
+\author{%
+  [Author~One],~[Author~Two],~and~[Author~Three]%
+  \thanks{The authors are with the School of [Placeholder], [Institution placeholder], [City, Country] (e-mail: [placeholder]).}%
+  \thanks{Source code, data and experiment scripts: \url{https://github.com/ROHITH-V-S/MAHROS}.}%
+}
+
+\markboth{Preprint, October 2026}{MAHROS: Verifiable, Privacy-Preserving Inter-Hospital Transfer Negotiation}
+
+\maketitle
+
+\begin{abstract}
+When an admitted patient deteriorates beyond what the admitting hospital can provide (an ICU bed, a catheterisation laboratory, a neurosurgeon), the patient must be transferred, and today the receiving hospital is found by a coordinator telephoning hospitals one at a time. The search is serial and slow, it consumes scarce staff time, and a refusal such as ``we are full'' cannot be checked by anyone. Centralised bed registries remove the serial search but require every hospital to disclose its occupancy and still believe whatever they are told. This paper presents \mahros{}, a Multi-Agent Hospital Resource Optimization System in which one software agent per hospital, with one resource agent per bed pool, answers a Contract-Net call for proposals from its own private state, and every refusal becomes a claim that can be verified. Capability refusals are checked against the public CMS Provider of Services register. Capacity refusals are checked against the refusing hospital's own recent acceptances, recorded on a hash-chained ledger, so no hospital ever discloses a bed count. Disputes are resolved with Dung's grounded semantics, challenged hospitals may be required to sign their refusal with Ed25519, and random spot checks counter coordinated refusal. The system is implemented in Python with a FastAPI console and a PostgreSQL backend whose reference data are trigger-locked and whose every change is written to a hash-chained audit log. It is evaluated on 27 real Houston and 30 real Phoenix hospitals built from U.S.\ HHS capacity reports, CMS capability data, OpenStreetMap road times and 37,439 real California transfers. The calibrated simulator reproduces reported occupancy within 3.8 and 3.0 percentage points from a cold start. \mahros{} places 13.0 points more patients within their clinical window than a perfect-information telephone search ($p<10^{-4}$), is statistically equivalent within $\pm2$ points to optimisers that read every hospital's true occupancy, recovers 62--77\% of the placements lost to false refusals with zero false accusations, outperforms a shared registry by up to 17.9 points under misreporting, and decides a transfer in a median of 3.6\,ms.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Multi-agent systems, contract net protocol, abstract argumentation, inter-hospital transfer, healthcare resource allocation, strategic misreporting, tamper-evident ledger, privacy-preserving coordination, discrete-event simulation.
+\end{IEEEkeywords}
+
+\input{sections/01_introduction}
+\input{sections/02_literature}
+\input{sections/03_goals}
+\input{sections/04_specification}
+\input{sections/05_design}
+\input{sections/06_models}
+\input{sections/06b_implementation}
+\input{sections/07_evaluation}
+\input{sections/08_discussion}
+\input{sections/09_conclusion}
+
+\appendices
+\input{sections/10_appendix}
+
+\section*{Acknowledgment}
+[Acknowledgment placeholder.] Hospital data are U.S.\ public-domain reports (HHS, CMS); road times derive from OpenStreetMap (ODbL) via OSRM; the transfer case-mix is California HCAI open data (CC-BY).
+
+\input{refs}
+
+\end{document}

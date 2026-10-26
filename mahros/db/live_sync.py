@@ -140,6 +140,11 @@ class DatabaseSync:
                 net.hospitals[a["receiver_id"]].accepted_count += 1
             if a["origin_id"] in net.hospitals:
                 net.hospitals[a["origin_id"]].sent_count += 1
+            net.reliability.record_award(a["receiver_id"])
+        for hid in hist.get("given_back", []):
+            # Awarded, then given back: both count towards its give-back rate.
+            net.reliability.record_award(hid)
+            net.reliability.record_give_back(hid)
         neg = net.negotiator
         for c in hist["counts"]:
             if c["action"] == "challenge":

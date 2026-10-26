@@ -1,0 +1,634 @@
+% =========================================================================
+\section{Experimental Evaluation}
+\label{sec:evaluation}
+% =========================================================================
+
+\subsection{Experimental Setup}
+\emph{Scenarios.} Each run simulates 14 days of a real network in a real week (Table~\ref{tab:weeks}). The Houston surge week (25 July 2021, Delta-wave peak, all 27 facilities reporting) is the primary scenario for the adversarial, attestation, collusion and sensitivity experiments.
+
+\begin{table}[!t]
+\centering
+\caption{Scenario Weeks, Selected by Observed Network Occupancy}
+\label{tab:weeks}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}llp{2.75cm}@{}}
+\toprule
+Scenario & Week & Selection rule \\
+\midrule
+\texttt{houston\_calm} & 2020-08-23 & calmest fully reported week \\
+\texttt{houston\_baseline} & 2021-01-10 & reference week \\
+\texttt{houston\_typical} & 2022-05-08 & median week of the series \\
+\texttt{houston\_surge} & 2021-07-25 & Delta-wave peak \\
+\texttt{houston\_post\_pandemic} & 2023-12-10 & post-pandemic capacity crisis \\
+\midrule
+\texttt{phoenix\_calm/baseline} & 2021-03-14 / 01-10 & same rules, Phoenix, \\
+\texttt{phoenix\_typical/surge} & 2022-07-17 / 2024-01-14 & no parameter re-tuned \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Baselines.} All strategies run in the same event loop on the same network and the same patient streams.
+(i) \emph{Phone tree}, today's practice: serial calls to the nearest peers, $\mathcal{N}(9,3)$\,min per call, up to eight calls, one coordinator per 150 beds, and \emph{perfect information} (no stale answers) in the headline comparison.
+(ii) \emph{Central greedy}: reads every hospital's true private state and awards first-come-first-served after 1\,min.
+(iii) \emph{Batched optimal}: collects requests over 5\,min and solves a minimum-cost assignment with the Hungarian method \cite{kuhn1955hungarian}, again with full true state.
+(iv) \emph{Shared registry}: picks the nearest hospital whose \emph{declared} state shows room.
+(v) \emph{No transfer}: the patient waits for a local unit.
+
+\emph{Metrics.} \emph{Success} is the fraction of requests whose care starts within the clinical window (objective \eqref{eq:obj1}). We also report mean and 90th-percentile time to care, critical-acuity miss rate, coordinator minutes per transfer, burden Gini over capacity-normalised acceptances, messages per transfer, decision concentration (the largest share of capacity-bearing messages any one node receives), and the adversarial counters: fabricated refusals, challenges, refusals overruled and \emph{false accusations} (overrules of hospitals that never misreport).
+
+\emph{Statistical protocol.} Seeds are $42+101i$, and arms are paired by seed (common random numbers), so seed-to-seed variance cancels. For $n$ paired differences $\Delta_i$ with mean $\bar\Delta$ and standard deviation $s_\Delta$, the test statistic and effect size are
+\begin{equation}
+  t=\frac{\bar\Delta}{s_\Delta/\sqrt{n}},\qquad d_z=\frac{\bar\Delta}{s_\Delta},\qquad \mathrm{CI}_{95}=\bar\Delta\pm t_{0.975,n-1}\frac{s_\Delta}{\sqrt n}.
+  \label{eq:ttest}
+\end{equation}
+The four primary comparisons on the surge week use 12 seeds and are corrected by Holm's method \cite{holm1979simple}, which compares the $j$-th smallest of $m$ $p$-values with $\alpha/(m-j+1)$. Equivalence with the optimisers is tested by the two one-sided tests procedure \cite{schuirmann1987tost,lakens2017equivalence} with a margin $\varepsilon=2$ points declared before the analysis. Equivalence holds when both
+\begin{equation}
+\begin{aligned}
+  t_{\mathrm{L}}&=\frac{\bar\Delta+\varepsilon}{s_\Delta/\sqrt n}>t_{0.95,n-1},\\
+  t_{\mathrm{U}}&=\frac{\bar\Delta-\varepsilon}{s_\Delta/\sqrt n}<-t_{0.95,n-1},
+\end{aligned}
+  \label{eq:tost}
+\end{equation}
+which is equivalent to the 90\% interval lying inside $(-\varepsilon,\varepsilon)$. Secondary experiments use 5--6 paired seeds. All statistics are implemented in pure Python, and the $t$ distribution is cross-checked against \texttt{scipy} in the test suite.
+
+\emph{Phone-tree model.} For the telephone baseline, the $j$-th call ends at $t_j=t+\sum_{i\le j}D_i$ with $D_i\sim\max(2,\mathcal{N}(9,3))$\,min. Each callee is assessed at its own call time $t_j$, so the hospitals reached late are assessed on a network that has moved on. The search stops at the first acceptance or after eight calls. It also requires a free coordinator at the origin, one per 150 beds.
+
+% -------------------------------------------------------------------------
+\subsection{Worked Example: One Real Negotiation Trace}
+\label{sec:example}
+Table~\ref{tab:example} reproduces one negotiation exactly as the live engine recorded it. The network is the Houston reference week. The six tertiary centres were set to \textsc{Protective}, and this was the 83rd request of the session: an emergent (acuity~3, 240-minute window) general ICU request from St Luke's Hospital at the Vintage (CCN 670075), with an expected stay of 53.9\,h. The CFP reached the eight nearest peers.
+\begin{itemize}
+\setlength{\itemsep}{1pt}
+\item Seven peers bid. Memorial Hermann Memorial City (450610), a protective tertiary centre, refused with \texttt{at\_self\_protection\_reserve}.
+\item The Verifier found that 450610 had accepted another ICU transfer one minute earlier and raised a challenge citing that ledger entry. The hospital's defence failed, because its own state showed a free ICU bed. Grounded labelling struck the refusal out (16 arguments, 8 attacks, 8 \textsc{in}, 8 \textsc{out}), and 450610 was held to its truthful bid of 64.3\,min.
+\item Each of the seven bidders had recently taken more than its capacity share, partly because the protective centres had been refusing, so each raised a burden objection. Each objection was admissible because comparable alternatives existed and the patient was not critical, and each bidder withdrew.
+\item The award went to 450610 with score 0.882: time term 0.892, capability 1.0, strain term 0.975, and a fairness bonus because its recent share was 56\% below its capacity share. Care was due in 64\,min, leaving 175\,min of slack.
+\end{itemize}
+The example shows both mechanisms acting together. Verification removed a false refusal, and the fairness layer sent the patient to the hospital that had been avoiding its share.
+
+\begin{table}[!t]
+\centering
+\caption{One Recorded Negotiation (Houston Reference Week, Request 83, ICU, Acuity 3)}
+\label{tab:example}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}llccl@{}}
+\toprule
+Peer (CCN) & Policy & Bid & $T$ (min) & Outcome \\
+\midrule
+450844 & honest & propose & 45.0 & burden objection, withdrew \\
+450638 & honest & propose & 57.3 & burden objection, withdrew \\
+450803 & honest & propose & 62.0 & burden objection, withdrew \\
+450610 & protective & refuse & -- & overruled; \textbf{awarded} (64.3) \\
+450684 & honest & propose & 70.3 & burden objection, withdrew \\
+450644 & honest & propose & 70.5 & burden objection, withdrew \\
+670077 & honest & propose & 73.2 & burden objection, withdrew \\
+450035 & honest & propose & 74.0 & burden objection, withdrew \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Simulator Validation Against Real Occupancy (O6)}
+\label{sec:res-occ}
+Validation starts from an \emph{empty} network, so it tests where the fitted arrival rates lead, not where the run was placed (Table~\ref{tab:occ}, Fig.~\ref{fig:occ}). In the Houston reference week the per-facility mean absolute error against reported occupancy is 3.83 points ($R^2=0.954$). Phoenix, fitted by the same code with nothing tuned, gives 3.03 points ($R^2=0.966$). In the Houston surge week the error is 5.64 points ($R^2=0.813$), concentrated in the 19 facilities that reported above the 0.95 fitting ceiling. The simulated surge network is therefore slightly less congested than the real one, which favours the baselines.
+
+\begin{table}[!t]
+\centering
+\caption{Cold-Start Occupancy Validation (5 Seeds, 35\% Burn-In)}
+\label{tab:occ}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Scenario & $n$ & MAE, reported & $R^2$ & MAE, target & $>0.95$ \\
+\midrule
+\texttt{houston\_baseline} & 27 & 3.83 & 0.954 & 2.17 & 15 \\
+\texttt{houston\_surge}    & 27 & 5.64 & 0.813 & 3.54 & 19 \\
+\texttt{phoenix\_baseline} & 30 & 3.03 & 0.966 & 2.36 & 4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1, horizontal sep=4mm, y descriptions at=edge left},
+  width=0.43\columnwidth, height=0.43\columnwidth,
+  xmin=0.1, xmax=1.02, ymin=0.1, ymax=1.02,
+  tick label style={font=\tiny}, label style={font=\scriptsize}, title style={font=\scriptsize, yshift=-1.5mm},
+  xtick={0.2,0.6,1.0}, ytick={0.2,0.6,1.0}, grid=major, grid style={gray!20},
+  xlabel={reported}]
+\nextgroupplot[title={(a) Houston baseline}, ylabel={simulated}]
+\addplot[gray, dashed, domain=0.1:1.02] {x};
+\addplot[only marks, mark size=1.1pt, scatter, point meta=explicit symbolic,
+  scatter/classes={0={mark=*,cM}, 1={mark=triangle*,cP}}]
+  table[x=observed, y=simulated, meta=capped]{figures/data/occ_houston_baseline.dat};
+\nextgroupplot[title={(b) Houston surge}]
+\addplot[gray, dashed, domain=0.1:1.02] {x};
+\addplot[only marks, mark size=1.1pt, scatter, point meta=explicit symbolic,
+  scatter/classes={0={mark=*,cM}, 1={mark=triangle*,cP}}]
+  table[x=observed, y=simulated, meta=capped]{figures/data/occ_houston_surge.dat};
+\nextgroupplot[title={(c) Phoenix baseline}]
+\addplot[gray, dashed, domain=0.1:1.02] {x};
+\addplot[only marks, mark size=1.1pt, scatter, point meta=explicit symbolic,
+  scatter/classes={0={mark=*,cM}, 1={mark=triangle*,cP}}]
+  table[x=observed, y=simulated, meta=capped]{figures/data/occ_phoenix_baseline.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Per-facility occupancy, simulated from an empty start vs.\ reported to HHS. Red triangles: facilities above the 0.95 ceiling.}
+\label{fig:occ}
+\end{figure}
+
+\subsection{Reliability of the Real Capacity Reports}
+\label{sec:res-integrity}
+The Data Integrity agent examined every weekly report from both networks (Table~\ref{tab:integrity}). In Houston, 306 of 5,673 reports (5.4\%) are flagged, 223 of them as impossible, and 20 of 27 hospitals have at least one impossible report. The most common patterns are zero inpatients in a staffed hospital (149) and a bed count collapsing below half of the surrounding weeks (71). Phoenix's reports are far cleaner, with 0.2\% flagged. Self-reported capacity from these same hospitals therefore cannot be assumed correct, which is the premise for verification.
+
+\begin{table}[!t]
+\centering
+\caption{Data Integrity Agent Applied to the Real HHS Weekly Reports}
+\label{tab:integrity}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrr@{}}
+\toprule
+ & Houston & Phoenix \\
+\midrule
+Reports checked & 5,673 & 6,169 \\
+Flagged (any) & 306 (5.4\%) & 10 (0.2\%) \\
+Impossible as reported (red) & 223 (3.9\%) & 5 (0.1\%) \\
+Hospitals with a red report & 20 of 27 & 3 of 30 \\
+\quad zero patients in staffed hospital & 149 & 0 \\
+\quad bed-count collapse & 71 & 1 \\
+\quad frozen count, 4+ weeks (amber) & 66 & 3 \\
+\quad one-week spike (amber) & 17 & 2 \\
+\quad patients $>$ beds; ICU anomalies & 3 & 4 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Coordination on an Honest Network (O1, O2, O4)}
+\label{sec:res-honest}
+Across all five Houston weeks, \mahros{} places 4.7 to 13.0 points more patients in time than the phone tree, and the gap widens as the network fills (Fig.~\ref{fig:honest}, Table~\ref{tab:honest}). \mahros{}, the two omniscient optimisers and the registry lie within about one point of each other every week. Without transfers only 42--51\% of requests reach care in time.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[mahros, height=0.58\columnwidth, ymin=78, ymax=100.5, xmin=-0.3, xmax=4.3,
+  xtick={0,1,2,3,4}, xticklabels={calm,baseline,typical,surge,post-pand.},
+  ylabel={success (\%)}, legend columns=2, legend pos=south west]
+\addplot[cM, very thick, mark=*] table[x=idx, y=mahros]{figures/data/honest_weeks.dat};
+\addlegendentry{\mahros{}}
+\addplot[cP, very thick, mark=square*] table[x=idx, y=phone]{figures/data/honest_weeks.dat};
+\addlegendentry{phone tree}
+\addplot[cC, thick, dashed, mark=triangle*] table[x=idx, y=central]{figures/data/honest_weeks.dat};
+\addlegendentry{central greedy}
+\addplot[cC, thick, dotted, mark=diamond*] table[x=idx, y=optimal]{figures/data/honest_weeks.dat};
+\addlegendentry{batched optimal}
+\addplot[cR, thick, mark=o] table[x=idx, y=registry]{figures/data/honest_weeks.dat};
+\addlegendentry{shared registry}
+\end{axis}
+\end{tikzpicture}
+\caption{Transfer success on the honest Houston network across five real weeks (5 seeds each).}
+\label{fig:honest}
+\end{figure}
+
+\begin{table}[!t]
+\centering
+\caption{Honest Houston Network: Success Rate (\%), 5 Seeds per Cell}
+\label{tab:honest}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Week & \mahros{} & Phone & Central & Batched & Registry & None \\
+\midrule
+calm          & 98.4 & 93.8 & 98.8 & 98.5 & 98.4 & 42.4 \\
+baseline      & 97.8 & 89.4 & 98.0 & 97.2 & 97.1 & 45.7 \\
+typical       & 95.1 & 82.8 & 95.6 & 94.6 & 95.6 & 44.2 \\
+surge         & 95.7 & 82.7 & 95.8 & 95.1 & 95.7 & 47.8 \\
+post-pandemic & 95.5 & 82.9 & 95.9 & 95.0 & 95.6 & 50.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Paired tests.} On the surge week with 12 seeds (Table~\ref{tab:sig}), \mahros{} exceeds the phone tree by 13.0 points (95\% CI $[11.9,14.1]$, $d_z=7.4$, Holm $p<10^{-4}$). It is equivalent within $\pm2$ points to central greedy ($-0.3$ points) and to batched optimal ($+0.4$ points), with TOST $p\approx10^{-4}$ for both. The shared registry ties \mahros{} on an honest network ($-0.0$ points, $p=0.898$).
+
+\begin{table}[!t]
+\centering
+\caption{Pre-Declared Paired Comparisons, Surge Week, 12 Seeds, Holm-Adjusted}
+\label{tab:sig}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\mahros{} minus & Diff.\ (pts) & 95\% CI & Holm $p$ & Equivalent ($\pm2$)? \\
+\midrule
+Phone tree      & $+13.0$ & $[+11.9, +14.1]$ & $<0.0001$ & -- \\
+Central greedy  & $-0.3$  & $[-1.0, +0.4]$   & 0.744 & yes ($p=0.0001$) \\
+Batched optimal & $+0.4$  & $[-0.2, +1.1]$   & 0.497 & yes ($p=0.0001$) \\
+Shared registry & $-0.0$  & $[-0.6, +0.6]$   & 0.898 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Mechanism and cost.} The gain comes from parallelism. Eight hospitals answer within one 2-minute window, while the phone tree has spent about 36 minutes by its fifth call. The benefit concentrates in the sickest patients: in one surge-week seed, 89\% of acuity-5 requests (90-minute window) were placed by \mahros{} against 61\% by the phone tree. Coordinator time falls from 50.3 to 1.1\,min per transfer (Table~\ref{tab:surge}). Decision concentration is 0.11, the same as the decentralised phone tree, against 1.00 for every central arm, and no message carries an occupancy value. The price of parallelism is message volume: 47 messages per transfer against 11.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[mahros, height=0.5\columnwidth, ybar, bar width=5pt, ymin=50, ymax=102,
+  xtick={2,3,4,5}, xticklabels={2 (480),3 (240),4 (150),5 (90)},
+  xlabel={acuity (clinical window, min)}, ylabel={success (\%)},
+  legend columns=3, legend style={at={(0.5,1.03)}, anchor=south}, enlarge x limits=0.18]
+\addplot[fill=cM, draw=cM] table[x=acuity, y=mahros]{figures/data/by_acuity.dat};
+\addplot[fill=cP, draw=cP] table[x=acuity, y=phone]{figures/data/by_acuity.dat};
+\addplot[fill=cC!60, draw=cC] table[x=acuity, y=central]{figures/data/by_acuity.dat};
+\legend{\mahros{}, phone tree, central greedy}
+\end{axis}
+\end{tikzpicture}
+\caption{Success by acuity, surge week, one seed (42), honest network. The shortest windows punish the serial search most; \mahros{} matches the omniscient central arm.}
+\label{fig:acuity}
+\end{figure}
+
+\begin{table}[!t]
+\centering
+\caption{Surge Week, Further Measures (5 Seeds)}
+\label{tab:surge}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+ & \mahros{} & Phone & Central & Batched & Registry \\
+\midrule
+Mean time to care (min)   & 65.3  & 87.2  & 60.4  & 65.1  & 64.0 \\
+90th pct.\ time to care (min) & 83.1 & 133.3 & 79.1 & 82.9 & 81.4 \\
+Critical miss rate & 7.3\% & 25.2\% & 7.0\% & 8.6\% & 7.3\% \\
+Coordinator min / transfer & 1.1  & 50.3  & 0.0   & 0.0   & 0.0 \\
+Burden Gini               & 0.274 & 0.317 & 0.277 & 0.301 & 0.302 \\
+Messages / transfer       & 47.1  & 11.1  & 33.1  & 33.9  & 13.3 \\
+Decision concentration    & 0.11  & 0.11  & 1.00  & 1.00  & 1.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:cdf} shows the full distribution of time to care for placed patients. \mahros{} and central greedy have nearly identical distributions (median 54.8 and 55.4\,min), while the phone tree's median is 71.9\,min and its 90th percentile 134\,min.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[mahros, height=0.55\columnwidth, xmin=30, xmax=200, ymin=0, ymax=1,
+  xlabel={time to care (min)}, ylabel={fraction of placed patients}, legend pos=south east]
+\addplot[cM, very thick] table[x=mahros, y=p]{figures/data/wait_cdf.dat};
+\addlegendentry{\mahros{}}
+\addplot[cC, thick, dashed] table[x=central, y=p]{figures/data/wait_cdf.dat};
+\addlegendentry{central greedy}
+\addplot[cP, very thick] table[x=phone, y=p]{figures/data/wait_cdf.dat};
+\addlegendentry{phone tree}
+\end{axis}
+\end{tikzpicture}
+\caption{Cumulative distribution of time to care for placed patients, surge week, one seed (42).}
+\label{fig:cdf}
+\end{figure}
+
+\emph{Ablation and fairness.} Removing the fairness term raises the burden Gini from 0.274 to 0.310 (Table~\ref{tab:ablation}). The paired 12-seed test gives a Gini reduction of 0.034 ($p=0.003$; bootstrap 95\% CI $[0.017,0.051]$) with no change in success ($+0.1$ points, $p=0.79$). Figure~\ref{fig:burden} shows the effect per hospital: with the fairness layer, acceptances per unit of critical-care capacity are drawn towards a common level, especially among mid-sized hospitals. On an honest network, deliberation costs a non-significant 0.7 points of success and 2.0 minutes of time to care. Its value appears under misreporting.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[mahros, height=0.52\columnwidth, xmin=0, xmax=28, ymin=0, ymax=170,
+  xlabel={hospital, ranked by critical-care capacity}, ylabel={acceptances / 100 units},
+  legend pos=north west]
+\addplot[only marks, mark=*, mark size=1.4pt, cM] table[x=rank, y=fair]{figures/data/burden.dat};
+\addlegendentry{fairness on}
+\addplot[only marks, mark=o, mark size=1.6pt, cP] table[x=rank, y=nofair]{figures/data/burden.dat};
+\addlegendentry{fairness off}
+\end{axis}
+\end{tikzpicture}
+\caption{Transfers accepted per 100 critical-care units (ICU, ventilator, cath lab, OR) for each of the 27 Houston hospitals, surge week, one seed (42), with and without the fairness layer.}
+\label{fig:burden}
+\end{figure}
+
+\begin{table}[!t]
+\centering
+\caption{Ablation on the Surge Week (5 Seeds); Adversarial Arms Have 50\% Protective Hospitals}
+\label{tab:ablation}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Arm & Success & Burden Gini & Time to care \\
+\midrule
+full                          & 95.7\% & 0.274 & 65.3 min \\
+no fairness                   & 95.5\% & 0.310 & 62.3 min \\
+no argumentation              & 96.3\% & 0.300 & 61.9 min \\
+\midrule
+adversarial, full             & 86.2\% & 0.462 & 82.1 min \\
+adversarial, no argumentation & 64.5\% & 0.585 & 82.5 min \\
+adversarial, no ledger        & 62.4\% & 0.586 & 85.4 min \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Verification Under False Refusals (O3)}
+\label{sec:res-adversarial}
+As the share of protective hospitals rises, success without checking falls from 96.4\% to 26.6\%. With \mahros{}' verification it falls only to 80.5\%, recovering 62--77\% of the loss (Fig.~\ref{fig:dose}, Table~\ref{tab:dose}). At 50\% protective, checking raises success from 63.7\% to 86.5\%. Removing the ledger costs as much as removing argumentation (62.4\% against 64.5\%, Table~\ref{tab:ablation}), because the ledger is the evidence base for capacity claims. \textbf{No experiment produced a false accusation.} This held even on a network in which half the hospitals are cautious and attract more than twice the challenges (9,915 against 4,272 per run): every one of their refusals was defended, because each was true (Table~\ref{tab:safety}). Verification catches individual lies selectively: at 50\% protective, 520.8 of 7,898 fabricated refusals per run are overruled. Yet 70\% of the lost placements are recovered, because a request fails only when every asked hospital refuses, so overruling one false refusal per failing request is usually enough.
+
+\begin{table}[!t]
+\centering
+\caption{Safety Check: Networks with Cautious (Truthful, High-Reserve) Hospitals, Counts per Run}
+\label{tab:safety}
+\scriptsize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Network & Challenges & Overruled & False acc. \\
+\midrule
+all honest & 4,272 & 0.0 & 0 \\
+50\% cautious & 9,915 & 0.0 & 0 \\
+25\% protective + 25\% cautious & 9,888 & 413.2 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[mahros, height=0.58\columnwidth, xmin=-3, xmax=103, ymin=20, ymax=100,
+  xlabel={protective hospitals (\%)}, ylabel={success (\%)}, legend pos=south west, unbounded coords=jump]
+\addplot[cM, very thick, mark=*] table[x=protective, y=on]{figures/data/dose_response.dat};
+\addlegendentry{\mahros{} (verification on)}
+\addplot[cP, very thick, mark=square*] table[x=protective, y=off]{figures/data/dose_response.dat};
+\addlegendentry{plain Contract Net}
+\addplot[cR, thick, mark=o] table[x=protective, y=registry]{figures/data/dose_response.dat};
+\addlegendentry{shared registry}
+\end{axis}
+\end{tikzpicture}
+\caption{Success vs.\ share of protective hospitals, surge week, 6 seeds (registry run at 0--50\%).}
+\label{fig:dose}
+\end{figure}
+
+\begin{table}[!t]
+\centering
+\caption{Dose-Response, Surge Week, 6 Seeds (Counts per Run)}
+\label{tab:dose}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Protective & Off & On & Recovered & False ref. & Overruled & False acc. \\
+\midrule
+0\%   & 96.4\% & 95.5\% & --  & 0      & 0.0   & 0 \\
+25\%  & 83.8\% & 91.6\% & 62\% & 3,657 & 342.0 & 0 \\
+50\%  & 63.7\% & 86.5\% & 70\% & 7,898 & 520.8 & 0 \\
+75\%  & 46.8\% & 83.1\% & 73\% & 10,700 & 648.2 & 0 \\
+100\% & 26.6\% & 80.5\% & 77\% & 14,864 & 784.5 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Against a shared registry.} With identical protective hospitals, the registry falls to 68.6\% at 50\% protective in Houston while \mahros{} holds 86.5\% ($+17.9$ points, $p=0.0002$). In Phoenix the corresponding figures are 83.5\% and 92.2\% ($+8.7$ points, $p=0.0016$; Table~\ref{tab:registry}). A registry removes a hospital that declares itself full and never tests the claim.
+
+\begin{table}[!t]
+\centering
+\caption{Shared Registry vs.\ \mahros{} Under Identical Protective Hospitals (6 Paired Seeds)}
+\label{tab:registry}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Network & Protective & Registry & \mahros{} & Difference \\
+\midrule
+\multirow{3}{*}{Houston surge} & 0\%  & 95.6\% & 95.5\% & $-0.1$ ($p=0.757$) \\
+ & 25\% & 88.0\% & 91.6\% & $+3.7$ ($p=0.016$) \\
+ & 50\% & 68.6\% & 86.5\% & $+17.9$ ($p=0.0002$) \\
+\midrule
+\multirow{3}{*}{Phoenix surge} & 0\%  & 96.8\% & 96.9\% & $+0.1$ ($p=0.839$) \\
+ & 25\% & 93.2\% & 94.9\% & $+1.8$ ($p=0.099$) \\
+ & 50\% & 83.5\% & 92.2\% & $+8.7$ ($p=0.0016$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Signed Refusals}
+\label{sec:res-attest}
+With signed refusals at 50\% protective hospitals, success rises from 62.3\% when no liar is deterred ($\delta=0$) to 82.0\% at $\delta=0.25$ and 85.6--86.7\% for $\delta\ge0.5$ (Fig.~\ref{fig:attest}). Full deterrence reproduces the unattested protocol exactly. False accusations remained zero throughout, and the post-hoc audit-referral false-positive rate was 1.10\%. Because deterrence is an institutional quantity that no dataset measures, the whole range is the result. Even modest deterrence recovers most of the loss (Table~\ref{tab:attest}). As $\delta$ rises, fewer false refusals are signed and more are withdrawn, so the number of signatures falls from about 21,000 to 9,900 per run.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[mahros, height=0.52\columnwidth, xmin=-0.04, xmax=1.04, ymin=58, ymax=90,
+  xlabel={deterrence $\delta$ (P a liar declines to sign)}, ylabel={success (\%)}, legend pos=south east]
+\addplot[cM, very thick, mark=*] table[x=deterrence, y=success]{figures/data/attestation.dat};
+\addlegendentry{signed refusals}
+\addplot[cP, thick, dashed, domain=-0.04:1.04] {63.69};
+\addlegendentry{no verification (63.7\%)}
+\addplot[cG, thick, dotted, domain=-0.04:1.04] {86.54};
+\addlegendentry{unattested (86.5\%)}
+\end{axis}
+\end{tikzpicture}
+\caption{Signed refusals at 50\% protective hospitals, surge week, 6 seeds, Ed25519.}
+\label{fig:attest}
+\end{figure}
+
+\begin{table}[!t]
+\centering
+\caption{Attestation Sweep at 50\% Protective (Per-Run Means, 6 Seeds)}
+\label{tab:attest}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Deterrence $\delta$ & Success & Signed & Declined & Audit referrals \\
+\midrule
+0.00 & 62.3\% & 21,115 & 0   & 107 \\
+0.25 & 82.0\% & 13,889 & 370 & 186 \\
+0.50 & 85.6\% & 10,627 & 480 & 155 \\
+0.75 & 86.6\% & 9,966  & 538 & 121 \\
+0.90 & 86.7\% & 9,950  & 599 & 119 \\
+1.00 & 86.5\% & 9,900  & 622 & 108 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Collusion and Spot Checks}
+\label{sec:res-collusion}
+A cartel that abstains in concert leaves no contradiction and cuts success from 95.5\% to 89.1\%, 79.2\% and 70.5\% for 3, 6 and 9 members (Fig.~\ref{fig:collusion}(a)). Co-refusal lift did not separate the cartel from an honest network under surge (maximum follow-on lift 1.10 against 1.24), because genuine scarcity makes honest hospitals refuse together. Uniform random spot checks did separate them. Checking 15\% of capacity refusals restored success under a six-member cartel to 90.8\% ($+11.6$ points, 95\% CI $[8.1,15.0]$, $p=0.0004$), at no measurable cost on an honest network and with zero false accusations (Fig.~\ref{fig:collusion}(b)). Escalating checks on hospitals already caught reached 91.3\%, which is not significantly better than uniform 15\% ($p=0.66$) and used 111\% of the checks, so uniform random auditing is the recommended configuration (Table~\ref{tab:reputation}).
+
+\begin{table}[!t]
+\centering
+\caption{Uniform vs.\ Risk-Based Spot Checks (Signed Protocol, 6 Seeds)}
+\label{tab:reputation}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Arm & Honest & 6 colluding & Checks & Cartel overruled \\
+\midrule
+no spot checks        & 95.5\% & 80.1\% & 0     & 65.7 \\
+uniform 5\%           & 95.5\% & 88.6\% & 1,523 & 345.7 \\
+uniform 10\%          & 95.5\% & 89.9\% & 2,571 & 414.8 \\
+uniform 15\%          & 95.5\% & 90.8\% & 3,589 & 453.0 \\
+5\%, 50\% once caught  & 95.5\% & 91.3\% & 3,976 & 616.3 \\
+5\%, 100\% once caught & 95.5\% & 91.3\% & 7,010 & 738.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1, horizontal sep=9mm},
+  width=0.52\columnwidth, height=0.48\columnwidth, ymin=65, ymax=100,
+  tick label style={font=\tiny}, label style={font=\scriptsize}, title style={font=\scriptsize},
+  grid=major, grid style={gray!20}]
+\nextgroupplot[title={(a) cartel size}, xlabel={colluding hospitals}, ylabel={success (\%)}, xtick={0,3,6,9}]
+\addplot[cP, very thick, mark=square*] table[x=size, y=success]{figures/data/cartel_size.dat};
+\nextgroupplot[title={(b) random spot checks}, xlabel={spot-check rate (\%)}, xtick={0,5,15,30},
+  legend style={font=\tiny, at={(0.98,0.04)}, anchor=south east, draw=none, fill=white, fill opacity=0.85, text opacity=1}]
+\addplot[cG, very thick, mark=*] table[x=rate, y=honest]{figures/data/spot_checks.dat};
+\addlegendentry{honest}
+\addplot[cM, very thick, mark=triangle*] table[x=rate, y=colluding]{figures/data/spot_checks.dat};
+\addlegendentry{6 colluding}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Collusion under the signed protocol, surge week, 6 seeds.}
+\label{fig:collusion}
+\end{figure}
+
+% -------------------------------------------------------------------------
+\subsection{Replication on Phoenix}
+With no parameter re-tuned, \mahros{} exceeds the phone tree by $+10.2$, $+9.9$, $+12.6$ and $+14.3$ points across the four Phoenix weeks (all $p<10^{-4}$; Table~\ref{tab:phoenix}) and again matches the registry and central greedy within about half a point. Under 50\% protective hospitals in the Phoenix surge week, verification restores success from 79.7\% to 92.5\% ($+12.8$ points, $p=0.0019$, 75\% of the loss), and signed refusals give 91.6\%. Phoenix ran cooler than Houston (4 facilities above the fitting ceiling against 15), so the replication tests a different congestion regime, and the effects are correspondingly smaller.
+
+\begin{table}[!t]
+\centering
+\caption{Phoenix Replication, 30 Real Hospitals, Nothing Re-Tuned (5 Seeds)}
+\label{tab:phoenix}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Week & \mahros{} & Phone & Registry & Central & Gain (pts) \\
+\midrule
+calm     & 98.8\% & 88.6\% & 98.9\% & 98.8\% & $+10.2$ \\
+baseline & 98.7\% & 88.8\% & 98.3\% & 98.4\% & $+9.9$ \\
+typical  & 98.6\% & 85.9\% & 98.2\% & 97.9\% & $+12.6$ \\
+surge    & 96.9\% & 82.6\% & 96.7\% & 97.1\% & $+14.3$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sensitivity Analysis}
+\label{sec:res-sens}
+Every unsourced parameter was swept on the surge week: clinical-window scale (0.7--1.5), call duration (5--15\,min), phone staleness (0--0.40), agent coordination cost, deliberation time, adversary strength, escalation delay and probability, handover time and cardiac catheterisation share. \mahros{} beat the phone tree at every value of every parameter (Fig.~\ref{fig:sens}), and the gap widened as windows tightened (86.3\% against 66.8\% at 0.7 scale). Verification adds 21.8 points when protective hospitals misreport consistently ($\phi=1$). When they misreport only half the time ($\phi=0.5$), a second negotiation round already reaches them on a truthful turn, and verification changes success by at most $-0.4$ points (Table~\ref{tab:adv-strength}). The mechanism is therefore aimed at systematic misreporting, which is the case a registry cannot handle. The phone tree degrades monotonically with call duration (86.5\% at 5\,min, 77.0\% at 15\,min) and with stale information (82.7\% at 0, 73.5\% at 0.40), so the perfect-information headline is conservative. Agent coordination cost and deliberation time (0--5\,min) changed nothing measurable. Table~\ref{tab:sens} gives the extremes of every sweep.
+
+\begin{table}[!t]
+\centering
+\caption{Sensitivity Sweeps, Surge Week, 5 Seeds: Success (\%) of \mahros{} / Phone Tree at Each End of the Range}
+\label{tab:sens}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lllcc@{}}
+\toprule
+Parameter & Low & High & At low & At high \\
+\midrule
+Clinical-window scale & 0.70 & 1.50 & 86.3 / 66.8 & 97.5 / 90.6 \\
+Escalation probability & 0.07 & 0.21 & 98.5 / 89.7 & 89.3 / 74.7 \\
+Handover allowance & 8 min & 20 min & 97.0 / 83.6 & 92.6 / 79.5 \\
+Escalation delay & 4 h & 12 h & 95.5 / 81.7 & 95.8 / 83.8 \\
+Cardiac cath share & 0.25 & 0.75 & 93.7 / 80.4 & 96.6 / 84.2 \\
+Phone call duration & 5 min & 15 min & -- / 86.5 & -- / 77.0 \\
+Phone staleness & 0 & 0.40 & -- / 82.7 & -- / 73.5 \\
+Agent coordination cost & 0.25 & 2 min & 95.6 / -- & 95.6 / -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{Adversary Strength, 50\% Protective, Surge Week, 5 Seeds: Success with Verification Off / On (\%)}
+\label{tab:adv-strength}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Comfort threshold $\theta$ & 0.30 & 0.55 & 0.80 \\
+\midrule
+shirk $\phi=0.5$ & 95.7 / 95.7 & 95.9 / 95.5 & 95.9 / 95.8 \\
+shirk $\phi=1.0$ & 64.5 / 86.2 & 64.5 / 86.2 & 64.5 / 86.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1, horizontal sep=9mm},
+  width=0.52\columnwidth, height=0.48\columnwidth, ymin=60, ymax=100,
+  tick label style={font=\tiny}, label style={font=\scriptsize}, title style={font=\scriptsize},
+  grid=major, grid style={gray!20}]
+\nextgroupplot[title={(a) clinical-window scale}, xlabel={scale on all windows}, ylabel={success (\%)},
+  legend style={font=\tiny, at={(0.98,0.04)}, anchor=south east, draw=none, fill=white, fill opacity=0.85, text opacity=1}]
+\addplot[cM, very thick, mark=*] table[x=scale, y=mahros]{figures/data/sens_window.dat};
+\addlegendentry{\mahros{}}
+\addplot[cC, thick, dashed, mark=triangle*] table[x=scale, y=central]{figures/data/sens_window.dat};
+\addlegendentry{central}
+\addplot[cP, very thick, mark=square*] table[x=scale, y=phone]{figures/data/sens_window.dat};
+\addlegendentry{phone}
+\nextgroupplot[title={(b) phone-tree call duration}, xlabel={minutes per call}]
+\addplot[cP, very thick, mark=square*] table[x=minutes, y=phone]{figures/data/sens_call.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Sensitivity on the surge week (5 seeds). The headline uses 9\,min per call and zero staleness.}
+\label{fig:sens}
+\end{figure}
+
+\subsection{Decision Latency (O7)}
+\label{sec:res-latency}
+Measured per transfer in a single process (Table~\ref{tab:latency}), the median decision time is 0.62\,ms for plain Contract Net, 3.55\,ms with ledger-backed verification, 4.26\,ms with attestation and 13.9\,ms in the adversarial setting. The 99th percentiles are 3.3, 17.3, 25.8 and 42.5\,ms, all well inside the 1\,s budget.
+
+\begin{table}[!t]
+\centering
+\caption{Per-Transfer Decision Time (ms), Surge Week, 3 Seeds}
+\label{tab:latency}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Configuration & $n$ & p50 & p95 & p99 \\
+\midrule
+Plain Contract Net & 1,080 & 0.62 & 2.04 & 3.31 \\
++ ledger-backed verification & 1,069 & 3.55 & 12.52 & 17.25 \\
++ attestation ($\delta=0.8$) & 1,069 & 4.26 & 15.53 & 25.80 \\
+Adversarial, 50\% protective & 1,968 & 13.90 & 31.14 & 42.51 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Objective Verification}
+Table~\ref{tab:objectives} summarises each objective against its measured result.
+
+\begin{table}[!t]
+\centering
+\caption{Objectives (Section~\ref{sec:objectives}) vs.\ Measured Results}
+\label{tab:objectives}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{0.45cm}p{2.6cm}p{3.6cm}p{0.6cm}@{}}
+\toprule
+ID & Target & Measured & Met \\
+\midrule
+O1 & $\ge$5 pts over phone tree & $+13.0$ pts, $p<10^{-4}$ & Yes \\
+O2 & equivalent within $\pm2$ pts & TOST $p=0.0001$ vs.\ both optimisers & Yes \\
+O3 & $\ge$50\% loss recovered, 0 false acc. & 70\% at 50\% protective; 0 false acc. & Yes \\
+O4 & no occupancy sent; low concentration & none sent; concentration 0.11 vs.\ 1.00 & Yes \\
+O5 & real data locked; edits detected & database tests pass (owner and app role) & Yes \\
+O6 & MAE $<5$ pts, both cities & 3.83 (Houston), 3.03 (Phoenix) & Yes \\
+O7 & p99 $<1$\,s & 42.5\,ms worst configuration & Yes \\
+\bottomrule
+\end{tabular}
+\end{table}

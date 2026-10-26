@@ -29,7 +29,7 @@ from ..core.types import (
     Specialty,
     TransferRequest,
 )
-from ..fairness.metrics import FairnessLedger, equity_report
+from ..fairness.metrics import FairnessLedger, ReliabilityLedger, equity_report
 from ..hospital.behaviours import POLICIES, HonestPolicy
 from ..hospital.hospital import Hospital
 from ..ledger.interface import HashChainLedger
@@ -45,6 +45,14 @@ from ..sim.scenario import (
     build_network,
     travel_time_matrix,
 )
+
+
+#: Clinical minutes a bed given back costs the patient, by reason. Declared
+#: assumptions, not measurements: a bed manager who checks and says no takes
+#: a few minutes; a hospital that never answers costs the time the bed was
+#: held for nothing. The live demo's 30-second time limit stands for that hold.
+GIVE_BACK_MINUTES = {"equipment_fault": 5.0, "bed_not_ready": 5.0, "no_staff": 5.0,
+                     "other": 5.0, "no_response": 15.0}
 
 
 @dataclass
@@ -94,6 +102,8 @@ class LiveNetwork:
         self.ledger = HashChainLedger(block_size=8)
         self.coordinator = LLMCoordinator() if llm_enabled else None
         self.fairness_enabled = fairness_enabled
+        #: Who gives awarded beds back; ranks them a little lower next time.
+        self.reliability = ReliabilityLedger()
 
         self.gen = PatientGenerator(cfg)
         self.history: list[dict] = []        # completed negotiations
@@ -120,6 +130,7 @@ class LiveNetwork:
             config=CNPConfig(enable_argumentation=argumentation_enabled),
             coordinator=self.coordinator,
             ledger=self.ledger,
+            reliability=self.reliability,
             observer=self._observe,
         )
 
@@ -215,8 +226,46 @@ class LiveNetwork:
             return self._request_transfer(origin, resource, specialty, acuity,
                                           patient_name, patient_note, actor)
 
+    def reoffer(self, held: dict, actor: str | None = None,
+                reason: str = "other", also_exclude=()) -> dict:
+        """A hospital declined the bed it was holding: ask the others again.
+
+        Same patient reference, same origin and need, every hospital that has
+        declined this patient left out, and the clinical clock still running
+        from the original request -- a decline costs the patient time.
+
+        The declined agreement is cancelled on the ledger and taken off the
+        hospital's fair-share burden: it gave the bed back, so it neither
+        "had one to give" (challenge evidence) nor carried the patient.
+        """
+        with self.lock:
+            if self.sync is not None:
+                self.sync.pull(self)
+            rcv = held["receiver_id"]
+            if held.get("allocation_id") and hasattr(self.ledger, "record_cancellation"):
+                self.ledger.record_cancellation(held["allocation_id"], rcv, reason, self.now)
+            self.fairness.withdraw_accept(rcv, float(held.get("expected_los_minutes") or 0.0))
+            self.reliability.record_give_back(rcv)
+            # The give-back costs the patient time. The clock moves to when the
+            # answer came, unless the network has already moved past that.
+            cost = GIVE_BACK_MINUTES.get(reason, GIVE_BACK_MINUTES["other"])
+            answered_at = (float(held["sim_minute"])
+                           + self.negotiator.config.bid_window_minutes + cost)
+            self.now = max(self.now, answered_at)
+            if rcv in self.hospitals:
+                h = self.hospitals[rcv]
+                h.accepted_count = max(0, h.accepted_count - 1)
+            deadline = float(held["sim_minute"]) + float(held["window_minutes"])
+            return self._request_transfer(
+                held["origin_id"], held["resource_kind"], held["specialty"],
+                held["acuity"], "", "", actor,
+                exclude=frozenset({rcv, *also_exclude}), deadline=deadline,
+                patient_ref=held["patient_ref"])
+
     def _request_transfer(self, origin, resource, specialty, acuity, patient_name,
-                          patient_note, actor) -> dict:
+                          patient_note, actor, exclude: frozenset[str] = frozenset(),
+                          deadline: float | None = None,
+                          patient_ref: str | None = None) -> dict:
         if origin not in self.hospitals:
             raise KeyError(f"unknown hospital {origin}")
 
@@ -235,9 +284,10 @@ class LiveNetwork:
             home_hospital=origin,
             notes=patient_note or "",
         )
-        token = self.privacy.anonymizer.pseudonymize(patient, origin)
+        token = patient_ref or self.privacy.anonymizer.pseudonymize(patient, origin)
 
         los = self._plausible_los(res, spec)
+        expires = self.now + ac.safe_window_minutes if deadline is None else deadline
         req = TransferRequest(
             origin=origin,
             patient_ref=token,
@@ -245,9 +295,10 @@ class LiveNetwork:
             specialty=spec,
             acuity=ac,
             created_at=self.now,
-            expires_at=self.now + ac.safe_window_minutes,
+            expires_at=expires,
             expected_los_minutes=los,
             group=patient.group,
+            excluded=exclude,
         )
 
         self._trace = []
@@ -267,7 +318,9 @@ class LiveNetwork:
                 "specialty": spec.value,
                 "acuity": int(ac),
                 "acuity_name": ac.name,
-                "window_min": ac.safe_window_minutes,
+                # Rounded down: a re-offer reads its deadline back from this, and
+                # rounding up would let a chain of re-offers gain time.
+                "window_min": int(max(0.0, expires - req.created_at)),
                 "expected_los_hours": round(los / 60.0, 1),
                 "patient_ref": token,
             },

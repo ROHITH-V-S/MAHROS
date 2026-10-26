@@ -210,8 +210,10 @@ class ChallengeEngine:
         # No directory entry: fall back to what it has actually accepted.
         if not hasattr(self.ledger, "accepted_by"):
             return []
+        # A patient accepted and then given back still shows the capability.
         rows = self.ledger.accepted_by(
-            bid.bidder, since=now - self.lookback, specialty=req.specialty.value)
+            bid.bidder, since=now - self.lookback, specialty=req.specialty.value,
+            include_cancelled=True)
         if not rows:
             return []
         ev = self._evidence(
@@ -250,7 +252,8 @@ class ChallengeEngine:
         if not hasattr(self.ledger, "accepted_by"):
             return []
         rows = self.ledger.accepted_by(
-            bid.bidder, since=now - self.lookback, resource=req.resource.value)
+            bid.bidder, since=now - self.lookback, resource=req.resource.value,
+            include_cancelled=True)
         if not rows:
             return []
         ev = self._evidence(
@@ -297,6 +300,31 @@ class ChallengeEngine:
                        f"{ev[0].minutes_ago:.0f} minutes ago. It had one to give."),
                 evidence=ev,
             )]
+
+        # It accepted one within the hour and gave it back (broken equipment,
+        # no staff, no answer). That is not proof it had a bed -- maybe it
+        # really did break -- but it is exactly how a hospital would wipe the
+        # evidence above, so it is asked to justify this refusal. A hospital
+        # whose own state supports the refusal defends it in one step.
+        if hasattr(self.ledger, "given_back_by"):
+            back = self.ledger.given_back_by(
+                bid.bidder, since=now - RESERVE_WINDOW_MINUTES,
+                resource=req.resource.value)
+            if back:
+                b = back[0]
+                why = b.get("given_back_reason", "").replace("_", " ")
+                ev = self._evidence(back[:2], now,
+                                    f"took another {nice} patient within the hour, "
+                                    f"then gave it back ({why})")
+                return [Challenge(
+                    target=bid.bidder,
+                    refusal_reason=bid.refusal_reason,
+                    claim=(f"{bid.bidder} says it is down to its last {nice}. It "
+                           f"took another {nice} patient {ev[0].minutes_ago:.0f} minutes "
+                           f"ago and then gave it back ({why}). It is asked to "
+                           f"justify this refusal."),
+                    evidence=ev,
+                )]
 
         broken = self.ledger.broken_commitments(
             bid.bidder, window_minutes=RESERVE_WINDOW_MINUTES,
