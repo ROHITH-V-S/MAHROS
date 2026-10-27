@@ -392,19 +392,24 @@ class Store:
                 out["admission_id"] = str(admission_id)
         return out
 
-    def transfers(self, limit: int = 30) -> list[dict]:
+    def transfers(self, limit: int = 30, current_session: bool = False) -> list[dict]:
         with self.tx() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT t.request_id, t.epoch, t.origin_id, o.name AS origin_name,
                        t.resource_kind, t.specialty, t.acuity, t.outcome,
                        t.failure_reason, t.created_at,
                        a.receiver_id, r.name AS receiver_name,
                        (SELECT count(*) FROM challenges c
-                        WHERE c.request_id = t.request_id) AS challenges
+                        WHERE c.request_id = t.request_id) AS challenges,
+                       EXISTS (SELECT 1 FROM bed_confirmations b
+                               WHERE b.request_id = t.request_id
+                                 AND b.outcome = 'reoffered') AS reoffer
                 FROM transfer_requests t
                 JOIN hospitals o ON o.hospital_id = t.origin_id
                 LEFT JOIN allocations a ON a.request_id = t.request_id
                 LEFT JOIN hospitals r ON r.hospital_id = a.receiver_id
+                {"WHERE t.epoch = (SELECT max(epoch) FROM live_epochs)"
+                 if current_session else ""}
                 ORDER BY t.created_at DESC LIMIT %s""", (limit,))
             return cur.fetchall()
 

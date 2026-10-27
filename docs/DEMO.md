@@ -54,90 +54,82 @@ Then try to change one value in that grid and save. **The database refuses**:
 > can always switch a lock off; that is why every change also goes on a
 > hash-chained audit log."
 
-### 2. Ask every hospital at once (1.5 min)
+**The order matters.** Tested twice from a fresh restore, same result both
+times. Start from **Restore all to real data** with no transfers yet, and run
+nothing extra in between. (If the cath lab case runs first, Methodist takes
+that patient and the liar case stops working.) If something looks off:
+restore, start again at step 2. To show an earlier case again, don't re-run
+it: **Live tab → Saved transfers → Show** plays it back from the database.
 
-Live tab. Set **cath lab / cardiac / acuity 5**, any origin. Press
-**Find this patient a bed**.
-
-> "Every capable hospital in reach is asked at the same moment, and each
-> answers for itself from its own beds. Most refuse because they don't have a
-> cath lab: transfers exist because capability is scarce."
-
-### 3. Edit a hospital, see the system use it (2 min)
+### 2. Edit a hospital, see the system use it (1 min)
 
 **Hospital data** tab → Houston Methodist Hospital (450358). Its ICU shows
-about **155 / 158**: that is what it reported in January 2021. Capacity has a
-lock; occupancy does not.
+about **155 / 158**: what it reported in January 2021. Capacity is locked;
+occupancy is not. Change ICU occupancy to **100** → **Save**. Point at the
+yellow **edited** badge (**real: 155**) and **History**. pgAdmin → `audit_log`
+→ *Last 100 Rows*: the same change, who, when, before/after, fingerprint.
 
-Change ICU occupancy to **100** → **Save**. Point at:
-- the yellow **edited** badge, with **real: 155** underneath
-- **History**: *"user:your-name · ICU: occupied 155 → 100"*
+### 3. Ask every hospital at once (1 min)
 
-pgAdmin → `audit_log` → *View/Edit Data → Last 100 Rows*: the same change,
-with the before and after values, who, when, and a fingerprint (`row_hash`).
+Live tab. Origin **450076 (MD Anderson)**, **ICU bed / general / acuity 5**.
+Run it. **Houston Methodist takes the patient.** Point at "What actually
+crosses the boundary". Leave this bed alone in Receiving hospital until 4d.
 
-### 4. Catch a false refusal (3 min)
+### 4. Catch a false refusal (2 min)
 
-Two rules make this work on the first run, every time. If asked, say them:
-a protective hospital lies only when it **really has a bed** and the patient
-is **below acuity 5**; "we're full" is challenged only if that hospital
-**accepted the same kind of patient in the last hour**. So: give Methodist
-room (step 3 did: ICU 100), let it accept one, then ask again at acuity 4.
+Why it is fixed, if asked: a protective hospital lies only when it really has
+a bed and the patient is below acuity 5; "we're full" is challenged only if
+that hospital accepted the same kind of patient in the last hour.
 
-1. Live tab. Origin **450076 (MD Anderson)**, **ICU bed / general / acuity 5**.
-   Run it. Houston Methodist takes the patient. (Leave that bed alone in the
-   Receiving hospital tab for now. If it is given back, the challenge in step 3
-   still happens, but is worded "took one and gave it back", not "had one".)
-2. In **Are they telling the truth?**, switch **450358** to **protective**.
+Switch **450358** to **protective**. Same origin, **acuity 4**. Run it.
+Methodist: *"we're down to our last one"* → **challenge**: *"it accepted a
+different ICU transfer ... ago. It had one to give."* → defence fails →
+**refusal struck out**.
 
-   > "Accepting a transfer costs a bed. The cheapest way to avoid one is to say
-   > you are full. In an ordinary auction nobody can check."
+> "Nobody revealed a bed count. The claim was checked against what Methodist
+> itself agreed to, on a record it cannot edit."
 
-3. Same origin, **acuity 4**. Run it. Point at:
-   - Methodist: *"we're down to our last one"*
-   - the **challenge**: *"it accepted a different ICU transfer 1 minute ago. It
-     had one to give."*
-   - the defence failing, **refusal struck out**, the argument map
+### 4a. Checking off (30 s)
 
-   > "Nobody revealed a bed count. The claim was checked against what Methodist
-   > itself agreed to a minute ago, on a record it cannot edit."
+Untick **Check refusals against the shared record**, acuity 4 again: the
+same refusal is believed. Tick it again.
 
-4. Untick **Check refusals against the shared record**, run acuity 4 again: the
-   same refusal is taken at face value. Tick it again.
-5. Optional, the honest case: switch Methodist back to **honest**, and in
-   Hospital data set its ICU to **158** (full). Run acuity 4: same refusal,
-   same challenge, and this time **the defence holds**.
+### 4b. Honest and full (1 min)
 
-   > "Same words, same challenge. The liar loses, the honest hospital wins,
-   > because only the honest one's own beds back it up."
+Methodist → **honest**; Hospital data → ICU **158** → Save. Acuity 4 again:
+same refusal, same challenge, **defence holds**. (450193, which took the 4
+patient, is challenged too and also defends.)
 
-### 4b. The receiving hospital confirms the bed (2 min)
+### 4c. The receiving hospital gives the bed back (1.5 min)
 
-**Receiving hospital** tab. The red dot is the hospital holding a bed for the
-last patient; the tab shows how many are waiting.
+**Receiving hospital** tab: Methodist has a red dot (the bed from step 3).
+**Can't take this patient** → **Equipment fault** → **Release the bed and
+offer the patient to other hospitals**. It costs the patient 5 minutes;
+Methodist is left out. **Live negotiation** opens with *"DECLINED THE BED"*
+and says the second choice (450193) no longer had a bed, so 450068 was
+chosen.
 
-- **✓ Bed ready — confirm**: recorded with your name.
-- **✗ Can't take this patient** → pick a reason (equipment fault, not cleaned,
-  no staff) → **Release the bed and offer the patient to other hospitals**.
-  The bed is freed, the other hospitals are asked again with every hospital
-  that declined left out, and the patient loses time: **5 minutes** for a
-  decline, **15** for no answer (declared assumptions). Switch to **Live
-  negotiation**: it opens with *"DECLINED THE BED"*, states the time lost, and
-  says whether the second choice took the patient or had filled up.
-- The hospital's **record** shows under the list: beds awarded and given back
-  this session. Each give-back lowers its score a little next time (the
-  **Reliability** column in the ranking): enough to lose a close call, never
-  enough to beat a much faster hospital.
-- Tick **Pass on automatically if nobody answers in 30 seconds**, run a
-  transfer, and wait: the patient moves on by itself, recorded as *no answer*.
-  It stops after 3 passes in a row (a coordinator has to phone). Untick it
-  before anything else: it applies to every bed held while it is on.
+### 4d. Giving a bed back doesn't wipe the evidence (1 min)
 
-> "An award is a reservation, not a promise. The receiving hospital confirms
-> the bed is really ready; if it can't, or doesn't answer, the patient goes
-> straight back out. A hospital that keeps giving beds back ranks lower, and
-> taking a patient then giving it back doesn't wipe the record: a later
-> 'we're full' still has to be justified."
+Methodist → **protective**, ICU **100**. Acuity 4 again: challenged *"It took
+another ICU patient ... and then gave it back (equipment fault). It is asked
+to justify this refusal."* → struck out. Receiving hospital → 450358: record
+*"2 awarded, 1 given back ... −0.037 on its score"*.
+
+### 4e. "We don't have that" (30 s)
+
+**Cath lab / cardiac / acuity 5** from 450076: "no cath lab" refusals,
+checked against the public CMS register, none challenged.
+
+### 4f. No evidence, no accusation (30 s, optional)
+
+Origin **670008**, **ICU / general / acuity 5**: four hospitals honestly full
+(real January 2021 data), nobody challenged.
+
+### 4g. Nothing is lost on reload (30 s)
+
+Reload the page. **Saved transfers** lists everything; **Show** on the
+step-4 transfer plays it back from the database, labelled PLAYBACK.
 
 ### 5. Show the transfer in the database (1 min)
 
@@ -172,7 +164,8 @@ in `audit_log` and `transfer_requests`.
 | What you see | What to do |
 |---|---|
 | **saved to PostgreSQL** is red | `docker compose up -d`, then refresh |
-| No challenge appears in step 4 | Methodist did not take the acuity-5 patient, or its bed was declined since. Check its ICU is at 100 in Hospital data and it is protective, then run acuity 5 and acuity 4 again from 450076 |
+| No challenge appears in step 4 | Methodist did not take the acuity-5 patient in step 3, usually because a transfer ran before it. Restore all to real data and start again at step 2, in order |
+| Panel wants an earlier case again | Live tab → Saved transfers → **Show** (plays it back; nothing re-runs) |
 | pgAdmin asks for a password | `mahros-admin-local` |
 | Results tab empty | `python experiments/run_all.py 5` then `python experiments/build_dashboard.py` |
 | Anything else | `docker compose restart app`. The data is in the database, so nothing is lost |

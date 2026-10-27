@@ -285,8 +285,10 @@ async def set_occupancy(body: OccupancyBody, request: Request):
 
 
 @app.post("/api/fairness")
-def set_fairness(body: ToggleBody, request: Request):
-    return NET.set_fairness(body.enabled, actor=who(request, body.actor))
+async def set_fairness(body: ToggleBody, request: Request):
+    out = NET.set_fairness(body.enabled, actor=who(request, body.actor))
+    await broadcast_state()          # every open console shows the new setting
+    return out
 
 
 @app.post("/api/policy")
@@ -301,8 +303,10 @@ async def set_policy(body: PolicyBody, request: Request):
 
 
 @app.post("/api/argumentation")
-def set_argumentation(body: ToggleBody, request: Request):
-    return NET.set_argumentation(body.enabled, actor=who(request, body.actor))
+async def set_argumentation(body: ToggleBody, request: Request):
+    out = NET.set_argumentation(body.enabled, actor=who(request, body.actor))
+    await broadcast_state()          # every open console shows the new setting
+    return out
 
 
 @app.get("/api/integrity")
@@ -666,10 +670,81 @@ def ledger_verify():
 
 
 @app.get("/api/transfers")
-def transfers(limit: int = 30):
+def transfers(limit: int = 30, session: bool = False):
     if (r := need_db()) is not None:
         return r
-    return to_jsonable({"transfers": STORE.transfers(limit)})
+    return to_jsonable({"transfers": STORE.transfers(limit, current_session=session)})
+
+
+#: agent_decisions.action -> the protocol step kind the console renders.
+_ACTION_STEP = {"cfp": "cfp", "propose": "bid", "refuse": "bid", "challenge": "challenge",
+                "defend": "defence", "attest": "attestation",
+                "burden_objection": "burden_objection", "overrule": "overruled",
+                "deliberation": "deliberation", "scored": "scored", "award": "awarded",
+                "failed": "failed"}
+
+
+def _replay_result(t: dict) -> dict:
+    """Rebuild a finished transfer from its database rows, in the shape it was shown.
+
+    Everything comes from what was recorded: every agent decision, the award
+    and the bed confirmation. The free-text clinical note was never stored
+    (it never left the sending hospital), so the privacy panel is left out.
+    """
+    from ..core.types import Acuity
+    req, alloc = t["request"], t["allocation"]
+    name = lambda h: NET.hospitals[h].name if h in NET.hospitals else h  # noqa: E731
+    steps = [{**d["payload"], "kind": _ACTION_STEP[d["action"]], "seq": d["seq"]}
+             for d in t["decisions"] if d["action"] in _ACTION_STEP]
+    awarded = req["outcome"] == "awarded" and alloc is not None
+    result = {
+        "request": {"request_id": req["request_id"], "origin": req["origin_id"],
+                    "origin_name": name(req["origin_id"]),
+                    "resource": req["resource_kind"], "specialty": req["specialty"],
+                    "acuity": req["acuity"], "acuity_name": Acuity(req["acuity"]).name,
+                    "window_min": req["window_minutes"],
+                    "patient_ref": next((s.get("public_view", {}).get("patient_ref")
+                                         for s in steps if s["kind"] == "cfp"), "")},
+        "privacy": None, "steps": steps, "awarded": awarded, "replay": True,
+        "db": True,                                  # it is, by definition, saved
+        "failure_reason": req.get("failure_reason"),
+    }
+    if awarded:
+        result["agreement"] = {
+            "agreement_id": alloc["allocation_id"], "receiver": alloc["receiver_id"],
+            "winner": alloc["receiver_id"], "receiver_name": name(alloc["receiver_id"]),
+            "origin": req["origin_id"], "terms_hash": alloc["terms_hash"],
+            "rationale": alloc["rationale"], "decided_by": alloc["decided_by"],
+            "time_to_care": alloc["time_to_care_minutes"] and round(alloc["time_to_care_minutes"], 1),
+            "slack_minutes": alloc["slack_minutes"] and round(alloc["slack_minutes"], 1),
+            "contested": bool(alloc["contested"]), "saved": True}
+    # A re-offer: say who gave the bed back first, and why.
+    ro = next((c for c in t["confirmations"]
+               if c["outcome"] == "reoffered" and c["request_id"] == req["request_id"]), None)
+    if ro is not None:
+        prev = STORE.trace(ro["previous_request_id"])
+        dec = next((c for c in (prev or {}).get("confirmations", [])
+                    if c["outcome"] == "declined"), None)
+        if dec is not None:
+            result["reoffer_of"] = {
+                "previous_request_id": ro["previous_request_id"],
+                "declined_by": dec["hospital_id"], "declined_by_name": name(dec["hospital_id"]),
+                "reason": dec["reason"],
+                "runner_up": STORE.reoffer_chain(ro["previous_request_id"])["runner_up"],
+                "cost_minutes": GIVE_BACK_MINUTES.get(dec["reason"], GIVE_BACK_MINUTES["other"])}
+    return result
+
+
+@app.post("/api/transfers/{request_id}/replay")
+async def replay_transfer(request_id: str):
+    """Play a saved transfer back on every open console, from the database."""
+    if (r := need_db()) is not None:
+        return r
+    t = STORE.trace(request_id)
+    if t is None:
+        return err(f"No transfer {request_id}.", 404)
+    asyncio.create_task(stream_negotiation(_replay_result(t), 250))
+    return {"ok": True, "request_id": request_id}
 
 
 @app.get("/api/transfers/{request_id}")
@@ -737,7 +812,8 @@ async def _stream_negotiation(result: dict, pace_ms: int) -> None:
     await hub.send_all({"type": "negotiation_start",
                         "request": result["request"],
                         "privacy": result["privacy"],
-                        "reoffer_of": result.get("reoffer_of")})
+                        "reoffer_of": result.get("reoffer_of"),
+                        "replay": bool(result.get("replay"))})
     await asyncio.sleep(pace)
 
     for step in result["steps"]:
