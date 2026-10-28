@@ -138,8 +138,7 @@ class LiveNetwork:
     def attach_database(self, sync) -> None:
         """Make PostgreSQL the source of truth and resume its current session."""
         self.sync = sync
-        sync.resume(self)
-        self.resumed_awarded = sum(h.accepted_count for h in self.hospitals.values())
+        sync.resume(self)            # also sets resumed_transfers / resumed_awarded
 
     @property
     def db_mode(self) -> bool:

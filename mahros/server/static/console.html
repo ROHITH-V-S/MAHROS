@@ -854,8 +854,10 @@ function fillSelects(){
   if(!s.options.length) STATE.specialties.forEach(x=>s.append(new Option(x,x)));
   const sc=$("#f-scen");
   if(!sc.options.length){
-    ["baseline","surge","scarcity","surge_scarcity","large_network","smoke"]
-      .forEach(x=>sc.append(new Option(nice(x),x)));
+    const list=["houston_baseline","houston_surge","houston_calm","houston_icu_scarce",
+                "phoenix_baseline","phoenix_surge"];
+    if(!list.includes(STATE.scenario)) list.unshift(STATE.scenario);
+    list.forEach(x=>sc.append(new Option(nice(x),x)));
     sc.value=STATE.scenario;
   }
   if(!r.value) r.value="icu_bed";
@@ -1313,6 +1315,17 @@ function award(m){
   say(`Patient placed at ${m.winner} — care starts in ${m.time_to_care} minutes`,
       `With <b>${m.slack_minutes} minutes to spare</b>. The agreement, the reason for it, `+
       `and every refusal along the way are now permanently recorded.`, "good");
+  const G=m.given_back;
+  if(G){
+    top.append(el("span","chip","given back later"));
+    n.append(el("div","why",
+      `<b>Afterwards:</b> ${esc(m.winner)} declined this bed (${esc(reasonText(G.reason))}). `+
+      (G.reoffer_to?`The patient was re-offered and went to <b>${esc(G.reoffer_to)}</b>.`
+       :G.reoffer_request_id?`The patient was re-offered, but nobody else could take them.`
+       :`The patient was re-offered.`)));
+    say(`${m.winner} was chosen — but later gave the bed back`,
+        `${esc(reasonText(G.reason))}. See the re-offer in Saved transfers.`, "warn");
+  }
   log(`${m.origin} → ${m.winner} in ${m.time_to_care} min`+
       (m.saved?" · saved to the database":""),"ok");
 }
@@ -1735,7 +1748,8 @@ async function loadSaved(){
       (x.receiver_id?`<b class="mono">${esc(x.receiver_id)}</b>`:`<span class="tag no">not placed</span>`)+
       ` · ${esc(nice(x.resource_kind))} · ${esc(x.specialty)} · a${x.acuity}`+
       (x.challenges?`<span class="tag ch">${x.challenges} challenge${x.challenges>1?"s":""}</span>`:"")+
-      (x.reoffer?`<span class="tag re">re-offer</span>`:"")));
+      (x.reoffer?`<span class="tag re">re-offer</span>`:"")+
+      (x.given_back?`<span class="tag no" title="The receiving hospital declined the bed afterwards">given back</span>`:"")));
     const b=el("button","mini-btn","Show");
     b.title="Play this transfer back from the database";
     b.onclick=async()=>{

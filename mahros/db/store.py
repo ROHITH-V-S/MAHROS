@@ -403,7 +403,10 @@ class Store:
                         WHERE c.request_id = t.request_id) AS challenges,
                        EXISTS (SELECT 1 FROM bed_confirmations b
                                WHERE b.request_id = t.request_id
-                                 AND b.outcome = 'reoffered') AS reoffer
+                                 AND b.outcome = 'reoffered') AS reoffer,
+                       EXISTS (SELECT 1 FROM bed_confirmations b
+                               WHERE b.request_id = t.request_id
+                                 AND b.outcome = 'declined') AS given_back
                 FROM transfer_requests t
                 JOIN hospitals o ON o.hospital_id = t.origin_id
                 LEFT JOIN allocations a ON a.request_id = t.request_id
@@ -657,7 +660,10 @@ class Store:
                   AND d.action IN ('challenge', 'overrule', 'burden_objection')
                 GROUP BY d.action, d.hospital_id""", (epoch,))
             counts = cur.fetchall()
-            cur.execute("SELECT count(*) AS n, max(sim_minute) AS last "
+            # Awarded counts negotiations that placed the patient, as the live
+            # scoreboard does -- including one whose bed was later given back.
+            cur.execute("SELECT count(*) AS n, max(sim_minute) AS last, "
+                        "count(*) FILTER (WHERE outcome = 'awarded') AS awarded "
                         "FROM transfer_requests WHERE epoch = %s", (epoch,))
             totals = cur.fetchone()
             # Beds awarded and then given back (declined, or no answer).
@@ -668,7 +674,8 @@ class Store:
                 ORDER BY c.confirmation_id""", (epoch,))
             given_back = [r["hospital_id"] for r in cur.fetchall()]
         return {"allocations": allocations, "counts": counts, "given_back": given_back,
-                "transfers": totals["n"], "last_sim_minute": totals["last"]}
+                "transfers": totals["n"], "awarded": totals["awarded"],
+                "last_sim_minute": totals["last"]}
 
     # -- Regional Monitor: where the network is running out ---------------- #
     def bottlenecks(self) -> dict[str, Any]:

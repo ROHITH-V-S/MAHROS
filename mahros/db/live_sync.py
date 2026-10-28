@@ -156,6 +156,7 @@ class DatabaseSync:
             elif c["action"] == "burden_objection":
                 neg.total_burden_objections += c["n"]
         net.resumed_transfers = hist["transfers"]
+        net.resumed_awarded = hist["awarded"]
         self.pull(net)
 
     # -- engine -> database ------------------------------------------------ #

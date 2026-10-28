@@ -30,6 +30,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from ..hospital.behaviours import POLICIES
+from ..negotiation.scoring import ScoringWeights
 from ..sim.scenario import SCENARIOS
 from .live import GIVE_BACK_MINUTES, LiveNetwork
 
@@ -104,9 +105,19 @@ NET = _startup_net()
 
 
 def _rebuild() -> None:
-    """Reload the whole network from the database (after a restore or a failure)."""
+    """Reload the whole network from the database (after a restore or a failure).
+
+    The two switches are the experiment's settings, not data: they carry over,
+    so a reload never quietly turns refusal-checking back on.
+    """
     global NET
-    NET = build_net()
+    fairness, argue = NET.fairness_enabled, NET.argumentation_enabled
+    net = build_net()
+    net.fairness_enabled = fairness
+    net.negotiator.weights = ScoringWeights(fairness_enabled=fairness)
+    net.argumentation_enabled = argue
+    net.negotiator.config.enable_argumentation = argue
+    NET = net
 
 
 # --------------------------------------------------------------------------- #
@@ -718,6 +729,17 @@ def _replay_result(t: dict) -> dict:
             "time_to_care": alloc["time_to_care_minutes"] and round(alloc["time_to_care_minutes"], 1),
             "slack_minutes": alloc["slack_minutes"] and round(alloc["slack_minutes"], 1),
             "contested": bool(alloc["contested"]), "saved": True}
+        # Awarded, then given back by the receiver: say so, or the playback
+        # would end on a placement that did not hold.
+        gb = next((c for c in t["confirmations"]
+                   if c["outcome"] == "declined" and c["request_id"] == req["request_id"]), None)
+        if gb is not None:
+            nxt = next((c for c in t["confirmations"] if c["outcome"] == "reoffered"
+                        and c["previous_request_id"] == req["request_id"]), None)
+            result["agreement"]["given_back"] = {
+                "reason": gb["reason"],
+                "reoffer_request_id": nxt and nxt["request_id"],
+                "reoffer_to": nxt and nxt["hospital_id"]}
     # A re-offer: say who gave the bed back first, and why.
     ro = next((c for c in t["confirmations"]
                if c["outcome"] == "reoffered" and c["request_id"] == req["request_id"]), None)
@@ -863,92 +885,98 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "error", "message": text}))
                 await ws.send_text(json.dumps({"type": "busy", "busy": False}))
 
-            if action == "transfer":
-                try:
-                    result = run_transfer(lambda: NET.request_transfer(
-                        origin=msg["origin"],
-                        resource=msg.get("resource", "icu_bed"),
-                        specialty=msg.get("specialty", "general"),
-                        acuity=int(msg.get("acuity", 4)),
-                        patient_name=msg.get("patient_name", ""),
-                        patient_note=msg.get("patient_note", ""),
-                        actor=actor,
-                    ))
-                except (KeyError, ValueError, TransferNotSaved) as exc:
-                    await fail(str(exc))
-                    continue
-                await stream_negotiation(result, int(msg.get("pace_ms", 550)))
-
-            elif action == "auto":
-                n = max(1, min(int(msg.get("count", 1)), 25))
-                for _ in range(n):
+            try:
+                if action == "transfer":
                     try:
-                        result = run_transfer(lambda: NET.auto_request(actor=actor))
+                        result = run_transfer(lambda: NET.request_transfer(
+                            origin=msg["origin"],
+                            resource=msg.get("resource", "icu_bed"),
+                            specialty=msg.get("specialty", "general"),
+                            acuity=int(msg.get("acuity", 4)),
+                            patient_name=msg.get("patient_name", ""),
+                            patient_note=msg.get("patient_note", ""),
+                            actor=actor,
+                        ))
                     except (KeyError, ValueError, TransferNotSaved) as exc:
                         await fail(str(exc))
-                        break
-                    await stream_negotiation(result, int(msg.get("pace_ms", 260)))
+                        continue
+                    await stream_negotiation(result, int(msg.get("pace_ms", 550)))
 
-            elif action == "state":
-                await broadcast_state()
+                elif action == "auto":
+                    n = max(1, min(int(msg.get("count", 1)), 25))
+                    for _ in range(n):
+                        try:
+                            result = run_transfer(lambda: NET.auto_request(actor=actor))
+                        except (KeyError, ValueError, TransferNotSaved) as exc:
+                            await fail(str(exc))
+                            break
+                        await stream_negotiation(result, int(msg.get("pace_ms", 260)))
 
-            elif action == "tamper":
-                await hub.send_all({"type": "tamper", **NET.tamper()})
+                elif action == "state":
+                    await broadcast_state()
 
-            elif action == "fairness":
-                NET.set_fairness(bool(msg.get("enabled", True)), actor=actor)
-                await broadcast_state()
+                elif action == "tamper":
+                    await hub.send_all({"type": "tamper", **NET.tamper()})
 
-            elif action == "argumentation":
-                NET.set_argumentation(bool(msg.get("enabled", True)), actor=actor)
-                await broadcast_state()
+                elif action == "fairness":
+                    NET.set_fairness(bool(msg.get("enabled", True)), actor=actor)
+                    await broadcast_state()
 
-            elif action == "policy":
-                # Make a hospital protective (or honest again). This is the
-                # control that turns the demo into an experiment: run the same
-                # case before and after, with checking on and off.
-                try:
-                    res = NET.set_policy(msg["hospital"], msg.get("policy", "honest"),
-                                         actor=actor)
-                except (KeyError, ValueError) as exc:
-                    await fail(str(exc))
-                    continue
-                await hub.send_all({"type": "policy", **res})
-                await broadcast_state()
+                elif action == "argumentation":
+                    NET.set_argumentation(bool(msg.get("enabled", True)), actor=actor)
+                    await broadcast_state()
 
-            elif action == "occupancy":
-                try:
-                    NET.set_occupancy(msg["hospital"], msg["resource"],
-                                      int(msg["occupied"]), actor=actor)
-                except (KeyError, ValueError) as exc:
-                    await fail(str(exc))
-                    continue
-                await broadcast_state()
+                elif action == "policy":
+                    # Make a hospital protective (or honest again). This is the
+                    # control that turns the demo into an experiment: run the same
+                    # case before and after, with checking on and off.
+                    try:
+                        res = NET.set_policy(msg["hospital"], msg.get("policy", "honest"),
+                                             actor=actor)
+                    except (KeyError, ValueError) as exc:
+                        await fail(str(exc))
+                        continue
+                    await hub.send_all({"type": "policy", **res})
+                    await broadcast_state()
 
-            elif action == "load" and NET.db_mode:
-                with NET.lock:
-                    STORE.set_network_load(actor, float(msg.get("level", 0.55)))
-                    NET.sync.pull(NET)
-                await broadcast_state()
+                elif action == "occupancy":
+                    try:
+                        NET.set_occupancy(msg["hospital"], msg["resource"],
+                                          int(msg["occupied"]), actor=actor)
+                    except (KeyError, ValueError) as exc:
+                        await fail(str(exc))
+                        continue
+                    await broadcast_state()
 
-            elif action in ("reset", "restore") and NET.db_mode:
-                # With a database, "start over" means: back to the real data.
-                with NET.lock:
-                    STORE.restore(actor)
-                _rebuild()
-                await hub.send_all({"type": "reset"})
-                await broadcast_state()
+                elif action == "load" and NET.db_mode:
+                    with NET.lock:
+                        STORE.set_network_load(actor, float(msg.get("level", 0.55)))
+                        NET.sync.pull(NET)
+                    await broadcast_state()
 
-            elif action == "reset":
-                globals()["NET"] = LiveNetwork(
-                    scenario=msg.get("scenario", LIVE_SCENARIO),
-                    seed=int(msg.get("seed", 42)),
-                    fairness_enabled=bool(msg.get("fairness_enabled", True)),
-                    argumentation_enabled=bool(msg.get("argumentation_enabled", True)),
-                )
-                NET.seed_load(float(msg.get("load", 0.62)))
-                await hub.send_all({"type": "reset"})
-                await broadcast_state()
+                elif action in ("reset", "restore") and NET.db_mode:
+                    # With a database, "start over" means: back to the real data.
+                    with NET.lock:
+                        STORE.restore(actor)
+                    _rebuild()
+                    await hub.send_all({"type": "reset"})
+                    await broadcast_state()
+
+                elif action == "reset":
+                    scen = msg.get("scenario")
+                    globals()["NET"] = LiveNetwork(
+                        scenario=scen if scen in SCENARIOS else LIVE_SCENARIO,
+                        seed=int(msg.get("seed", 42)),
+                        fairness_enabled=bool(msg.get("fairness_enabled", True)),
+                        argumentation_enabled=bool(msg.get("argumentation_enabled", True)),
+                    )
+                    NET.seed_load(float(msg.get("load", 0.55)))
+                    await hub.send_all({"type": "reset"})
+                    await broadcast_state()
+            except WebSocketDisconnect:
+                raise
+            except Exception as exc:  # noqa: BLE001 - say so; keep the socket open
+                await fail(f"{action or 'message'} failed: {exc}")
 
     except WebSocketDisconnect:
         hub.leave(ws)

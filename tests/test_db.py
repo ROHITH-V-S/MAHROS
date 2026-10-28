@@ -480,6 +480,22 @@ def test_restart_resumes_the_session(store):
     assert again.ledger.verify()["valid"]
 
 
+def test_scoreboard_is_the_same_after_a_restart_with_a_given_back_bed(store):
+    """A bed given back and re-offered is still a placed patient, not a failure."""
+    net = _net(store)
+    r = net.request_transfer(origin="450097", resource="icu_bed",
+                             specialty="general", acuity=4, actor="user:test")
+    held = store.decline_bed("user:bed-manager", r["request"]["request_id"], "bed_not_ready")
+    again = net.reoffer(held, actor="user:test")
+    store.record_reoffer("user:test", again["request"]["request_id"],
+                         r["request"]["request_id"],
+                         again["agreement"]["receiver"] if again["awarded"] else None)
+    live = net.state()["totals"]
+    resumed = _net(store).state()["totals"]
+    for k in ("negotiations", "awarded", "failed"):
+        assert resumed[k] == live[k], (k, live, resumed)
+
+
 def test_restore_puts_real_data_back_and_keeps_history(store):
     net = _net(store)
     net.request_transfer(origin="450097", resource="icu_bed", specialty="general",
